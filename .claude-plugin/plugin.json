@@ -5,6 +5,8 @@
   "author": {
     "name": "Ryan Henderson"
   },
+  "license": "MIT",
+  "repository": "https://github.com/htxryan/claude-session-router",
   "types": "./types/index.d.ts",
   "userConfig": {
     "mode": {
