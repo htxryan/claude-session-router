@@ -1,0 +1,24 @@
+{
+  "_about": "Held-out probes, written after the main set was tuned: different wording, domains and starting models. Same format as probes.json.",
+  "defaults": { "current": { "model": "claude-opus-5-5", "effort": "medium" }, "mode": "balanced", "hasImages": false, "preferences": [] },
+  "probes": [
+    { "id": "h-weather", "prompt": "what's the capital of Australia", "accept": { "haiku": [null], "keep": [null], "sonnet": ["low"] }, "prefer": "haiku" },
+    { "id": "h-regex", "prompt": "Give me a regex that matches US ZIP codes, with or without the +4.", "accept": { "haiku": [null], "sonnet": ["low", "medium"] }, "prefer": "haiku" },
+    { "id": "h-fable-typo", "prompt": "Fix the misspelled word 'recieve' in docs/setup.md.", "current": { "model": "claude-fable-5-1", "effort": "high" }, "accept": { "haiku": [null], "sonnet": ["low"], "opus": ["low"] }, "prefer": "haiku" },
+    { "id": "h-haiku-hard", "prompt": "Our Postgres primary keeps hitting replication lag spikes every night around 2am and the replicas fall minutes behind. Find out why and fix it.", "current": { "model": "claude-haiku-4-5", "effort": null }, "accept": { "opus": ["medium", "high", "xhigh"], "fable": ["medium", "high", "xhigh"] }, "prefer": "opus" },
+    { "id": "h-sonnet-arch", "prompt": "Decide whether we should move our event pipeline from Kafka to a managed queue. Weigh cost, ops burden, ordering guarantees and migration risk, then recommend.", "current": { "model": "claude-sonnet-5-5", "effort": "medium" }, "accept": { "opus": ["medium", "high", "xhigh"], "fable": ["medium", "high"] }, "prefer": "opus" },
+    { "id": "h-slides", "prompt": "Turn these meeting notes into a clean 8-slide deck for the quarterly review.", "accept": { "sonnet": ["low", "medium", "high"], "opus": ["low", "medium"] }, "prefer": "sonnet" },
+    { "id": "h-bugfix-repro", "prompt": "Clicking Save twice creates duplicate rows. Repro: open /settings, double-click Save. Add a guard and a test.", "accept": { "sonnet": ["medium", "high"], "opus": ["low", "medium", "high"] }, "prefer": "sonnet" },
+    { "id": "h-log-scan", "prompt": "Read logs/worker.log and tell me which job failed most often yesterday.", "accept": { "haiku": [null], "sonnet": ["low", "medium"] }, "prefer": "haiku" },
+    { "id": "h-pattern-sweep", "prompt": "Replace every use of the deprecated logger.warn(msg, extra) signature with logger.warning(msg, extra=extra) across all 140 Python files.", "accept": { "opus": ["low", "medium"], "sonnet": ["low", "medium"] }, "prefer": "opus" },
+    { "id": "h-overnight", "prompt": "Port this 30k-line C library to idiomatic Rust with full test parity. I'll check back tomorrow morning.", "accept": { "fable": ["medium", "high", "xhigh", "max"], "opus": ["high", "xhigh", "max"] }, "prefer": "fable" },
+    { "id": "h-opus-failed", "prompt": "Opus has tried twice to fix this deadlock in the scheduler and both fixes still hang under load. Take another pass.", "accept": { "fable": ["medium", "high", "xhigh", "max"] }, "prefer": "fable" },
+    { "id": "h-pentest", "prompt": "Hunt for vulnerabilities in our payment webhook handler on your own and write up anything exploitable with a fix.", "accept": { "opus": ["high", "xhigh", "max"], "fable": ["high", "xhigh", "max"] }, "prefer": "opus" },
+    { "id": "h-recipe", "prompt": "Plan a week of dinners for two, vegetarian, under 30 minutes each, and make a grocery list.", "accept": { "haiku": [null], "sonnet": ["low", "medium"] }, "prefer": "sonnet" },
+    { "id": "h-best", "prompt": "Use your most capable model for this: write the migration plan for our billing system.", "accept": { "fable": ["low", "medium", "high", "xhigh", "max"] }, "prefer": "fable" },
+    { "id": "h-sonnet-low", "prompt": "Run this session on Sonnet at low effort. Start by listing the TODO comments in src/.", "accept": { "sonnet": ["low"] }, "prefer": "sonnet" },
+    { "id": "h-chart", "prompt": "Here's a screenshot of our revenue dashboard. What's driving the dip in March?", "hasImages": true, "accept": { "opus": ["low", "medium", "high"], "sonnet": ["medium", "high"] }, "prefer": "opus" },
+    { "id": "h-ambiguous-feature", "prompt": "Make onboarding better.", "accept": { "keep": [null], "opus": ["medium", "high"] }, "prefer": "keep" },
+    { "id": "h-frugal-research", "prompt": "Find the three cheapest flights from Houston to Denver next weekend.", "mode": "frugal", "accept": { "haiku": [null], "sonnet": ["low", "medium"] }, "prefer": "sonnet" }
+  ]
+}

@@ -1,0 +1,7 @@
+# Written by Claude Code when it loads the plugin
+.claude-plugin/types/
+# Eval reports
+evals/*.md
+evals/out/
+__pycache__/
+.DS_Store

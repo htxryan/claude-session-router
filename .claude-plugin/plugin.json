@@ -1,0 +1,76 @@
+{
+  "name": "session-router",
+  "version": "0.1.0",
+  "description": "Routes each new session's first prompt to the right Claude model and effort, explains why, and lets you override before it is sent.",
+  "author": {
+    "name": "Ryan Henderson"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Routing mode",
+      "description": "Tiebreak when two options are close: frugal prefers the cheapest model that will finish, performance the more capable model.",
+      "default": "balanced",
+      "options": [
+        "frugal",
+        "balanced",
+        "performance"
+      ]
+    },
+    "routerModel": {
+      "type": "string",
+      "title": "Router model",
+      "description": "The model that makes the routing decision.",
+      "default": "claude-opus-5-5"
+    },
+    "routerEffort": {
+      "type": "string",
+      "title": "Router effort",
+      "description": "How hard the router thinks about the decision.",
+      "default": "medium",
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    },
+    "remoteMode": {
+      "type": "string",
+      "title": "Remote Control prompts",
+      "description": "ask shows the picker on the phone too; auto applies the pick without asking; skip leaves phone sessions unrouted.",
+      "default": "ask",
+      "options": [
+        "ask",
+        "auto",
+        "skip"
+      ]
+    },
+    "askWhenClose": {
+      "type": "boolean",
+      "title": "Ask even when the pick is close",
+      "description": "Off: when the pick is the current model and within one effort level, send without asking.",
+      "default": false
+    },
+    "bypassPrefix": {
+      "type": "string",
+      "title": "Bypass prefix",
+      "description": "Start a first prompt with this to skip routing (the prefix is removed).",
+      "default": "!!"
+    },
+    "timeoutMs": {
+      "type": "number",
+      "title": "Router timeout (ms)",
+      "description": "After this, the prompt is sent on the current model.",
+      "default": 30000
+    },
+    "shadow": {
+      "type": "boolean",
+      "title": "Shadow mode",
+      "description": "Log the pick without asking or switching.",
+      "default": false
+    }
+  }
+}
