@@ -1,12 +1,26 @@
 {
   "name": "session-router",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Routes each new session's first prompt to the right Claude model and effort, explains why, and lets you override before it is sent.",
   "author": {
     "name": "Ryan Henderson"
   },
   "license": "MIT",
   "repository": "https://github.com/htxryan/claude-session-router",
+  "keywords": [
+    "model-routing",
+    "model-selection",
+    "router",
+    "effort",
+    "reasoning-effort",
+    "cost-optimization",
+    "token-savings",
+    "opus",
+    "sonnet",
+    "haiku",
+    "fable",
+    "mod"
+  ],
   "types": "./types/index.d.ts",
   "userConfig": {
     "mode": {
