@@ -16,11 +16,13 @@ import {
   label,
   options as pickerOptions,
   parseRec,
-  resolveAnswer,
+  parseAnswer,
+  answerInput,
+  ANSWER_SYSTEM,
   restrict,
   routerInput,
 } from '../router/pick'
-import type { Current } from '../router/pick'
+import type { Current, Rec } from '../router/pick'
 
 const routing = atom({ plugin: 'session-router', key: 'routing' } as const, null)
 
@@ -136,6 +138,22 @@ async function takenOver(
   return r.override
 }
 
+// An answer the person typed in the picker, read by the router model.
+async function readAnswer(
+  $: EngineInterface,
+  answer: string,
+  rec: Rec,
+  current: Current,
+  model: string,
+  signal: AbortSignal,
+): Promise<Choice | 'unrecognized'> {
+  $.ui.status('reading your answer…')
+  const reply = await $.model
+    .complete({ model, system: ANSWER_SYSTEM, prompt: answerInput(answer, rec, current), effort: 'low', maxTokens: 200, timeoutMs: 15000 }, { signal })
+    .catch(() => null)
+  return reply?.isAnswered ? parseAnswer(reply.text, current) : 'unrecognized'
+}
+
 const sameModel = (a: string, b: string) => baseId(a) === baseId(b)
 
 const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${Math.round(ms / 1000)} s`)
@@ -144,6 +162,7 @@ export const register: Register = (on, options) => {
   const mode = String(options.mode ?? 'balanced')
   const remoteMode = String(options.remoteMode ?? 'ask')
   const prefix = String(options.bypassPrefix ?? '')
+  const routerModel = String(options.routerModel ?? 'claude-opus-5-5')
   const allowed = allowedFamilies(options.excludeModels)
   const timeoutSetting = Math.round(Number(options.timeoutMs))
   const timeoutMs = timeoutSetting > 0 ? timeoutSetting : 30000
@@ -191,7 +210,9 @@ export const register: Register = (on, options) => {
   // Claude Code switching the model by itself (a fallback) ends the switch.
   on('classic.PostModelSwitch', async ($, e, next) => {
     const r = await read($, routing)
-    if (e.source === 'auto' && r?.status === 'routed' && !r.override) await settle($, { ...r, override: 'auto' })
+    if (e.source === 'auto' && r?.status === 'routed' && r.override !== 'model' && r.override !== 'auto') {
+      await settle($, { ...r, override: 'auto' })
+    }
     return next(e)
   })
 
@@ -213,6 +234,7 @@ export const register: Register = (on, options) => {
     // for a second prompt (from another surface) while the first is routed.
     if (e.turnId !== undefined || busy) return next(e)
     busy = true
+    cancelled = false
     try {
       if ((await read($, routing)) !== null || (await replies($)) > baseReplies) return next(e)
       // This plugin's own commands (asking choose-model for advice) aren't work to route.
@@ -260,7 +282,7 @@ export const register: Register = (on, options) => {
       const reply = await $.model
         .complete(
         {
-          model: String(options.routerModel ?? 'claude-opus-5-5'),
+          model: routerModel,
           system: await readSkill($),
           prompt: routerInput({
             prompt: e.text,
@@ -316,6 +338,7 @@ export const register: Register = (on, options) => {
 
       let choice: Choice = null
       let answer: string | null = null
+      let unread = false // a typed answer the router model couldn't read
       if (isRemote && remoteMode === 'auto') {
         choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
       } else {
@@ -323,8 +346,10 @@ export const register: Register = (on, options) => {
         const question = rec.family === 'keep' ? `Keep ${now}?` : `Run this session on ${suggested}?`
         try {
           answer = await $.ui.ask(`${rec.reason}${fastNote} ${question}`, { header: 'Model', options: opts.map(o => o.label) })
-          const resolved = resolveAnswer(answer, opts, rec, current)
-          if (resolved === 'unrecognized') $.ui.toast(`Didn't recognize "${answer}"; staying on ${now}`)
+          // One of the options, or an answer the person typed.
+          const option = opts.find(o => o.label === answer)
+          const resolved = option ? option.choice : await readAnswer($, answer, rec, current, routerModel, next.signal)
+          if (resolved === 'unrecognized') unread = true
           else choice = resolved
         } catch {
           // Esc, or the surface couldn't show the picker: keep the current model.
@@ -332,7 +357,14 @@ export const register: Register = (on, options) => {
       }
 
       if (choice === null || isCurrent(choice, current)) {
-        const how = answer !== null ? 'you kept it' : isRemote && remoteMode === 'auto' ? 'over Remote Control' : 'picker dismissed'
+        const how =
+          answer === null
+            ? isRemote && remoteMode === 'auto'
+              ? 'over Remote Control'
+              : 'picker dismissed'
+            : unread
+              ? `couldn't read "${answer.slice(0, 40)}"`
+              : 'you kept it'
         return decide(kept(rec.reason), `staying on ${now} (${how}; it suggested ${suggested}).${why}`, undefined, { answer })
       }
 
