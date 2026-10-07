@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Choice, Routing } from '../types'
+import type { Choice, Effort, Routing } from '../types'
 import {
   LATEST,
   allowedFamilies,
@@ -102,6 +102,28 @@ async function notice($: EngineInterface, text: string): Promise<void> {
   }
 }
 
+// Whether the person has changed the model or the effort since the switch
+// began: the session's own request carries a different one, or /model or
+// /effort reported setting one (picking the session's original model changes
+// nothing visible but still means "stop switching").
+async function takenOver(
+  $: EngineInterface,
+  r: Routing,
+  e: { model: string; effort?: Effort | number },
+  watching: Map<'model' | 'effort', number>,
+): Promise<Routing['override']> {
+  const said = async (command: 'model' | 'effort', text: string) => {
+    const from = watching.get(command)
+    if (from === undefined) return false
+    watching.delete(command)
+    return (await $.session.messages()).slice(from).some(m => m.text.includes(`<local-command-stdout>${text}`))
+  }
+  if (!r.base) return r.override
+  if (e.model !== r.base.model || (await said('model', 'Set model to'))) return 'model'
+  if (e.effort !== r.base.effort || (await said('effort', 'Set effort level to'))) return 'effort'
+  return r.override
+}
+
 const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${Math.round(ms / 1000)} s`)
 
 export const register: Register = (on, options) => {
@@ -119,6 +141,8 @@ export const register: Register = (on, options) => {
   // The decision, noted under the prompt once its turn starts (a plugin's
   // append made after the prompt is handed on does not land).
   let pending: string | null = null
+  // /model or /effort run since the last request, with the transcript's length then.
+  const watching = new Map<'model' | 'effort', number>()
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'router', description: 'Shows which model this session was routed to, and why.' })
@@ -127,13 +151,11 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'router' }, async $ => ({ text: describe(await read($, routing)) }))
 
-  // The person changing the model ends the switch; changing the effort ends
-  // only the effort part of it.
+  // /model and /effort return before their dialog closes; note where the
+  // transcript stood so the next request can tell a pick ("Set model to …")
+  // from Esc ("Kept model as …").
   on('command.run', async ($, e, next) => {
-    const override: Routing['override'] | null = e.command === 'model' ? 'model' : e.command === 'effort' ? 'effort' : null
-    if (override) {
-      await update($, routing, r => (r?.status === 'routed' && r.override !== 'model' ? { ...r, override } : r))
-    }
+    if (e.command === 'model' || e.command === 'effort') watching.set(e.command, (await $.session.messages()).length)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -141,6 +163,7 @@ export const register: Register = (on, options) => {
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
       checked = cancelled = false
+      watching.clear()
       baseReplies = 0
       shellTurn = pending = null
       await settle($, null)
@@ -299,12 +322,19 @@ export const register: Register = (on, options) => {
 
   // Every main-loop request of the session runs on the choice. Done per request
   // on purpose: /model would also save the choice as the default for every
-  // future session. Subagents keep their own models.
+  // future session. Subagents keep their own models. When the person changes
+  // the model (or the effort) themselves, that change wins from then on.
   on('turn.step', async function* ($, e, next) {
     const r = await read($, routing)
     const applied = r?.status === 'routed' && r.override !== 'model' ? r.applied : null
-    if (!applied || e.agentId !== undefined) return yield* next(e)
-    const effort = applied.effort && !r?.override ? { effort: applied.effort } : {}
+    if (!r || !applied || e.agentId !== undefined) return yield* next(e)
+    const override = await takenOver($, r, e, watching)
+    if (!r.base || override !== r.override) {
+      const status = override === 'model' ? undefined : `→ ${override ? LATEST[applied.family].name : label(applied.family, applied.effort)}`
+      await settle($, { ...r, base: r.base ?? { model: e.model, effort: e.effort }, override }, status)
+    }
+    if (override === 'model') return yield* next(e)
+    const effort = applied.effort && !override ? { effort: applied.effort } : {}
     return yield* next({ ...e, model: applied.model, ...effort })
   })
 
