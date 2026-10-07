@@ -3,8 +3,8 @@
 
 import type { Effort, Family, Choice } from '../types'
 
-export const FAMILIES: readonly Family[] = ['fable', 'opus', 'sonnet', 'haiku']
-export const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+const FAMILIES: readonly Family[] = ['fable', 'opus', 'sonnet', 'haiku']
+const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
 // The latest model of each family, for the per-request rewrite. Update when a
 // family gets a new model.
@@ -16,7 +16,7 @@ export const LATEST: Record<Family, { id: string; name: string }> = {
 }
 
 // What each family runs at in Claude Code when nobody names an effort.
-export const DEFAULT_EFFORT: Record<Exclude<Family, 'haiku'>, Effort> = { fable: 'high', opus: 'medium', sonnet: 'medium' }
+const DEFAULT_EFFORT: Record<Exclude<Family, 'haiku'>, Effort> = { fable: 'high', opus: 'medium', sonnet: 'medium' }
 
 const effortFor = (family: Family, effort: Effort | null): Effort | null =>
   family === 'haiku' ? null : (effort ?? DEFAULT_EFFORT[family])

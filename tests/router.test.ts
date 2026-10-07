@@ -396,4 +396,24 @@ describe('routing a session', () => {
     await $.turn.complete({ ...done, usage: { model: 'claude-opus-4-8' } } as never)
     expect(calls.logs.filter(n => n.includes('but claude-opus-4-8 answered')).length).toBe(1)
   })
+
+  test('a model picked before the first prompt does not end the switch later', async ($, on) => {
+    const env: Env = { rows: [] }
+    engine(on, env)
+    const seen: string[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push(e.model)
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
+    })
+    on('command.run', () => ({ text: '' }) as never)
+    await $.command.run({ command: 'model', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+    env.rows!.push('<local-command-stdout>Set model to `Opus 5.5` for this session only</local-command-stdout>')
+    await submit($, 'Add a --dry-run flag to scripts/sync.py')
+    env.rows!.push('Add a --dry-run flag to scripts/sync.py')
+    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
+    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
+    await drain(step)
+    await drain({ ...step, index: 1 })
+    expect(seen).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
+  })
 })
