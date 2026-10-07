@@ -29,7 +29,7 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 
 ## Use
 
-- **Skip routing for one session:** start the first prompt with `!!`.
+- **Skip routing for one session:** start the first prompt with `~~`.
 - **See what happened:** `/router`, or the line the plugin adds under your first prompt.
 - **Settings** (`/plugin` → session-router): mode `frugal` / `balanced` / `performance`, models to never recommend (e.g. `fable` if you don't have access), router model and effort, and phone (Remote Control) behaviour.
 

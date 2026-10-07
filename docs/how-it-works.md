@@ -42,11 +42,11 @@ sequenceDiagram
 
 ## Decisions
 
-- **Only the first prompt.** Routing happens only when the session has no turns yet and nothing has been routed. A prompt typed while the first turn runs, a second prompt, and notifications are never routed. `/clear` starts over.
-- **Switched per request, not with `/model`.** Running `/model` from a plugin also saves the choice as your account-wide default. The plugin instead rewrites `model` and `effort` on each main-loop request (`turn.step`). Subagents keep their own models.
+- **Only the first prompt.** Routing happens only when the session has no turns yet and nothing has been routed. A prompt typed while the first turn runs, a second prompt, a resumed session (`--continue`, `--resume`), notifications and this plugin's own commands are never routed. `/clear` starts over. If you press Esc while it's routing, the prompt is cancelled and is routed again when you resend it.
+- **Switched per request, not with `/model`.** Running `/model` from a plugin also saves the choice as your account-wide default. The plugin instead rewrites `model` and `effort` on each main-loop request (`turn.step`). If you run `/model` yourself, the switch ends. If you run `/effort`, only the effort part ends and the routed model stays.
 - **Your current effort** is read the way Claude Code resolves it: `--effort` or `CLAUDE_CODE_EFFORT_LEVEL`, then `modelSettings.<model>.effortLevel`, then the model's default. The 5.5 models ignore a top-level `effortLevel` in user settings.
 - **Fails open.** If the router errors or times out (30 s), the prompt is sent on the current model and the notice says so.
-- **Skipped** for headless runs (`claude -p`), prompts starting with `!!` (configurable), and, if you choose, Remote Control. On the phone the picker shows by default. Setting `remoteMode: auto` applies the pick without asking.
+- **Skipped** for headless runs (`claude -p`), prompts starting with `~~` (configurable; avoid `!`, which starts shell mode, and `/`, which starts commands), and, if you choose, Remote Control. On the phone the picker shows by default. Setting `remoteMode: auto` applies the pick without asking.
 - **Models to never recommend** (`excludeModels`, e.g. `fable`) are listed as off-limits in the router's input. If the router names one anyway, its allowed runner-up takes its place; if there is none, the current model stays. You can still type an excluded model in the picker.
 - **Modes** only break ties between close options: `frugal` favours the cheapest model that will finish, and `performance` the more capable one.
 - **Where it runs.** Automatic routing needs Claude Code's plugin hooks, and it was tested in the terminal. In Claude Cowork the skill is expected to work through the same plugin format, but automatic routing is untested and probably doesn't run.
@@ -81,3 +81,11 @@ Results on 2026-10-07 (Opus 5.5 at medium as the router):
 | Held out, 20 × 5 | 100% | 100% | 96% |
 
 "Acceptable" means the pick was in the probe's range. Most probes accept several reasonable answers, for example Opus or Fable at certain efforts. The held-out prompts were written after the skill was tuned. They include sessions that start on Haiku, Sonnet or Fable, explicit model requests, a prompt-injection attempt, and excluded models.
+
+## Known limits
+
+- **Subagents keep the session's original model.** Subagents that inherit the main model, including the built-in Explore agent, run on the model the session started with, not the routed one. Subagents with their own `model` setting are unaffected.
+- **`/effort` saves to the original model.** In a routed session, Claude Code saves `/effort` as the default effort for the model the session started with, for example Opus, even though the routed model is what uses it.
+- **A bad value in settings stops the plugin loading.** If `pluginConfigs` in `settings.json` is edited by hand and a field has the wrong type, such as text for `timeoutMs`, Claude Code doesn't load the plugin, and the error only appears in the debug log. Setting options through `/plugin` avoids this.
+- **"Chat about this" in the picker** keeps the current model, the same as Esc.
+- **Type-ahead.** Text you type while the router is working stays in the prompt box. It isn't sent as part of the first prompt.

@@ -3,12 +3,13 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Choice, Effort, Routing } from '../types'
 import {
-  DEFAULT_EFFORT,
   EFFORTS,
   allowedFamilies,
   LATEST,
   currentLabel,
+  defaultEffortOf,
   familyOf,
+  isLatest,
   isCloseEnough,
   label,
   options as pickerOptions,
@@ -39,7 +40,7 @@ async function readCurrent($: EngineInterface): Promise<Current> {
     asEffort(await $.env.get('CLAUDE_EFFORT')) ??
     asEffort(await $.env.get('CLAUDE_CODE_EFFORT_LEVEL')) ??
     asEffort(key ? perModel[key]?.effortLevel : undefined) ??
-    (family ? DEFAULT_EFFORT[family] : asEffort(settings.effortLevel))
+    (family ? defaultEffortOf(model) : asEffort(settings.effortLevel))
   return { family, model, effort }
 }
 
@@ -57,7 +58,11 @@ function describe(r: Routing | null): string {
       : r.status === 'kept'
         ? 'Kept the current model'
         : 'Routing skipped'
-  const note = r.status === 'routed' && r.overridden ? ' You have since changed the model or effort yourself.' : ''
+  const note =
+    r.status !== 'routed' ? ''
+    : r.overridden ? ' You have since changed the model yourself, so the switch has ended.'
+    : r.effortOverridden ? ' You have since changed the effort yourself; the model switch still applies.'
+    : ''
   return `${what}. ${r.reason}${note}`
 }
 
@@ -92,6 +97,12 @@ export const register: Register = (on, options) => {
   const prefix = String(options.bypassPrefix ?? '')
   const allowed = allowedFamilies(options.excludeModels)
   let checked = false
+  // Claude Code keeps counting turns across /clear; routing compares with the
+  // count at the last /clear.
+  let baseTurns = 0
+  // Set when Esc cancels the prompt while routing: the turn Claude Code still
+  // starts for it doesn't count as the session getting under way.
+  let cancelled = false
   // The decision, noted under the prompt once its turn starts (a plugin's
   // append made after the prompt is handed on does not land).
   let pending: string | null = null
@@ -110,10 +121,14 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'router' }, async $ => ({ text: describe(await read($, routing)) }))
 
-  // The person changing the model or effort themselves ends the rewrite.
+  // The person changing the model ends the switch; changing the effort ends
+  // only the effort part of it.
   on('command.run', async ($, e, next) => {
-    if (e.command === 'model' || e.command === 'effort') {
+    if (e.command === 'model') {
       await update($, routing, r => (r && r.status === 'routed' ? { ...r, overridden: true } : r))
+    }
+    if (e.command === 'effort') {
+      await update($, routing, r => (r && r.status === 'routed' ? { ...r, effortOverridden: true } : r))
     }
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -121,7 +136,9 @@ export const register: Register = (on, options) => {
   // /clear ends the session without a new session.start.
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
+      baseTurns = await $.session.turns()
       checked = false
+      cancelled = false
       pending = null
       await settle($, null)
     }
@@ -132,7 +149,9 @@ export const register: Register = (on, options) => {
     // Only the very first prompt of a session: never once any turn has run,
     // and never for a prompt typed while the first turn is still running.
     if (e.turnId !== undefined) return next(e)
-    if ((await read($, routing)) !== null || (await $.session.turns()) > 0) return next(e)
+    if ((await read($, routing)) !== null || (await $.session.turns()) > baseTurns) return next(e)
+    // This plugin's own commands (asking choose-model for advice) aren't work to route.
+    if (e.text.trimStart().startsWith('/session-router:')) return next(e)
 
     const kind = e.origin.kind
     const surfaces = await $.session.surfaces()
@@ -153,6 +172,7 @@ export const register: Register = (on, options) => {
     }
 
     const current = await readCurrent($)
+    const timeoutMs = Number(options.timeoutMs ?? 30000)
     $.ui.status('routing…')
     const reply = await $.model.complete(
       {
@@ -169,16 +189,26 @@ export const register: Register = (on, options) => {
         }),
         effort: asEffort(options.routerEffort) ?? 'medium',
         maxTokens: 1024,
-        timeoutMs: Number(options.timeoutMs ?? 30000),
+        timeoutMs,
       },
       { signal: next.signal },
     )
+    // Esc while routing cancels the prompt; route it again when it's resent.
+    if (next.signal.aborted) {
+      $.ui.status(undefined)
+      cancelled = true
+      return next(e)
+    }
     const parsed = reply.isAnswered ? parseRec(reply.text) : null
     const rec: Rec | null = parsed && restrict(parsed, allowed)
     const entry = { origin: kind, project: await $.session.cwd(), excerpt: e.text.slice(0, 200), current, rec }
 
     if (!rec) {
-      const failure = reply.isAnswered ? 'unreadable reply' : reply.reason
+      const failure = reply.isAnswered
+        ? 'unreadable reply'
+        : reply.reason === 'aborted'
+          ? `timed out after ${timeoutMs < 1000 ? `${timeoutMs} ms` : `${Math.round(timeoutMs / 1000)} s`}`
+          : reply.reason
       await settle($, { status: 'skipped', applied: null, reason: `Router unavailable (${failure}).`, overridden: false })
       await log($, { ...entry, outcome: 'router-failed' })
       return announce(next, e, `unavailable (${failure}); this session stays on ${currentLabel(current)}.`)
@@ -191,8 +221,9 @@ export const register: Register = (on, options) => {
       return announce(next, e, `shadow mode, would pick ${would}; staying on ${currentLabel(current)}.${why(rec.reason)}`)
     }
 
-    if (rec.family === 'keep' || (options.askWhenClose !== true && isCloseEnough(rec, current))) {
-      await settle($, { status: 'kept', applied: null, reason: rec.reason, overridden: false }, `router: ${currentLabel(current)}`)
+    const askAnyway = options.askWhenClose === true && (rec.family !== 'keep' || rec.alternative !== null)
+    if (!askAnyway && (rec.family === 'keep' || isCloseEnough(rec, current))) {
+      await settle($, { status: 'kept', applied: null, reason: rec.reason, overridden: false }, `kept ${currentLabel(current)}`)
       await log($, { ...entry, outcome: 'close-enough' })
       const close = rec.family === 'keep' ? 'no reason to switch' : `close enough to its pick, ${label(rec.family, rec.effort)}`
       return announce(next, e, `staying on ${currentLabel(current)} (${close}).${why(rec.reason)}`)
@@ -201,11 +232,13 @@ export const register: Register = (on, options) => {
     let choice: Choice
     let answer: string | null = null
     if (isRemote && remoteMode === 'auto') {
-      choice = { family: rec.family, effort: rec.effort }
+      choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
     } else {
       const opts = pickerOptions(rec, current)
       try {
-        answer = await $.ui.ask(`${rec.reason} Run this session on ${label(rec.family, rec.effort)}?`, {
+        const question =
+          rec.family === 'keep' ? `Keep ${currentLabel(current)}?` : `Run this session on ${label(rec.family, rec.effort)}?`
+        answer = await $.ui.ask(`${rec.reason} ${question}`, {
           header: 'Model',
           options: opts.map(o => o.label),
         })
@@ -217,10 +250,14 @@ export const register: Register = (on, options) => {
       }
     }
 
-    const suggested = label(rec.family, rec.effort)
-    const isSame = choice !== null && choice.family === current.family && (choice.effort === null || choice.effort === current.effort)
+    const suggested = rec.family === 'keep' ? `keeping ${currentLabel(current)}` : label(rec.family, rec.effort)
+    const isSame =
+      choice !== null &&
+      isLatest(current.model) &&
+      choice.family === current.family &&
+      (choice.effort === null || choice.effort === current.effort)
     if (choice === null || isSame) {
-      await settle($, { status: 'kept', applied: null, reason: rec.reason, overridden: false }, `router: ${currentLabel(current)}`)
+      await settle($, { status: 'kept', applied: null, reason: rec.reason, overridden: false }, `kept ${currentLabel(current)}`)
       await log($, { ...entry, answer, outcome: 'kept' })
       const how = answer === null ? 'picker dismissed' : 'you kept it'
       return announce(next, e, `staying on ${currentLabel(current)} (${how}; it suggested ${suggested}).${why(rec.reason)}`)
@@ -242,6 +279,10 @@ export const register: Register = (on, options) => {
   // A turn that starts with routing still undecided (a resumed session, a
   // notification or a skipped first prompt) closes routing for the session.
   on('turn.start', async ($, e, next) => {
+    if (cancelled) {
+      cancelled = false
+      return next(e)
+    }
     if (pending !== null) {
       const text = pending
       pending = null
@@ -261,7 +302,7 @@ export const register: Register = (on, options) => {
     const r = await read($, routing)
     const applied = r && r.status === 'routed' && !r.overridden ? r.applied : null
     if (!applied || e.agentId !== undefined) return yield* next(e)
-    const effort = applied.effort && applied.family !== 'haiku' ? { effort: applied.effort } : {}
+    const effort = applied.effort && applied.family !== 'haiku' && !r?.effortOverridden ? { effort: applied.effort } : {}
     return yield* next({ ...e, model: applied.model, ...effort })
   })
 
