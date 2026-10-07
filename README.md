@@ -14,15 +14,6 @@
 
 A Claude Code plugin that picks the model and effort for each new session. When you send the first prompt of a session (or the first after `/clear`), Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku and an effort level. It tells you why, and you confirm or override before the prompt is sent. Later prompts are never routed.
 
-```
- Model
- Fixing a one-word typo needs no reasoning. Run this session on Haiku 4.5 · effort n/a?
- ❯ 1. Haiku 4.5 · effort n/a (Recommended)
-   2. Sonnet 5.5 · low — if the typo also appears in code
-   3. Keep Opus 5.5 · medium (current)
-   4. Type something else (e.g. "fable max")
-```
-
 The rules come from Anthropic's published model and effort guidance, kept in [one skill](skills/choose-model/SKILL.md). You can also run that skill yourself: `/session-router:choose-model <task>`.
 
 ## Install
