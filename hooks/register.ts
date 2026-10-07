@@ -8,6 +8,7 @@ import {
   LATEST,
   currentLabel,
   defaultEffortOf,
+  ignoresTopLevelEffort,
   familyOf,
   isLatest,
   isCloseEnough,
@@ -25,10 +26,10 @@ const routing = atom({ plugin: 'session-router', key: 'routing' } as const, null
 const asEffort = (v: unknown): Effort | null =>
   typeof v === 'string' && (EFFORTS as readonly string[]).includes(v) ? (v as Effort) : null
 
-// The session's effort, resolved as Claude Code does: --effort or
-// CLAUDE_CODE_EFFORT_LEVEL, then the per-model setting, then the model's own
-// default (a top-level effortLevel in user settings doesn't apply to the 5.5
-// models).
+// The session's effort, resolved as Claude Code does: CLAUDE_CODE_EFFORT_LEVEL,
+// then the per-model setting, then a top-level effortLevel (which Opus 5.5 and
+// later models ignore), then the model's own default. An --effort flag on the
+// command line isn't visible to plugins.
 async function readCurrent($: EngineInterface): Promise<Current> {
   const model = await $.session.model()
   const family = familyOf(model)
@@ -36,11 +37,12 @@ async function readCurrent($: EngineInterface): Promise<Current> {
   const settings = await $.settings.read()
   const perModel = (settings.modelSettings ?? {}) as Record<string, { effortLevel?: unknown } | undefined>
   const key = Object.keys(perModel).find(k => model.startsWith(k) || k.startsWith(model.replace(/\[.*\]$/, '')))
+  const topLevel = ignoresTopLevelEffort(model) ? null : asEffort(settings.effortLevel)
   const effort =
-    asEffort(await $.env.get('CLAUDE_EFFORT')) ??
     asEffort(await $.env.get('CLAUDE_CODE_EFFORT_LEVEL')) ??
     asEffort(key ? perModel[key]?.effortLevel : undefined) ??
-    (family ? defaultEffortOf(model) : asEffort(settings.effortLevel))
+    topLevel ??
+    defaultEffortOf(model)
   return { family, model, effort }
 }
 
@@ -50,6 +52,12 @@ async function readCurrent($: EngineInterface): Promise<Current> {
 async function replies($: EngineInterface): Promise<number> {
   const api = await $.session.messages({ as: 'api' })
   return api.filter(m => m.role === 'assistant').length
+}
+
+// Whether /fast is on: it only speeds up Opus.
+async function fastModeOn($: EngineInterface): Promise<boolean> {
+  const rows = await $.config.list()
+  return rows.some(r => r.key === 'fast' && r.value === true)
 }
 
 // A turn Claude Code starts by itself to show the model a shell command's
@@ -250,8 +258,10 @@ export const register: Register = (on, options) => {
     } else {
       const opts = pickerOptions(rec, current)
       try {
+        const fastNote =
+          rec.family !== 'keep' && rec.family !== 'opus' && (await fastModeOn($)) ? ' (Fast mode only applies to Opus.)' : ''
         const question =
-          rec.family === 'keep' ? `Keep ${currentLabel(current)}?` : `Run this session on ${label(rec.family, rec.effort)}?`
+          rec.family === 'keep' ? `Keep ${currentLabel(current)}?` : `Run this session on ${label(rec.family, rec.effort)}?${fastNote}`
         answer = await $.ui.ask(`${rec.reason} ${question}`, {
           header: 'Model',
           options: opts.map(o => o.label),

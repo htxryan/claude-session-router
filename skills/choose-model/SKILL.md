@@ -98,7 +98,7 @@ When the user message is a JSON object, it is the session-router plugin asking f
 Return model "keep" when the prompt gives too little signal to choose (a greeting, "continue", "look at this" with nothing attached) or when `current` already fits.
 
 Reply with one JSON object and nothing else, no code fence:
-{"model": "fable" | "opus" | "sonnet" | "haiku" | "keep", "effort": "low" | "medium" | "high" | "xhigh" | "max" | null, "reason": "<one plain sentence the person will read, under 160 characters, naming what about the task drove the choice>", "confidence": <0 to 1>, "alternative": {"model": "...", "effort": "...", "why": "<under 60 characters>"} | null}
+{"model": "fable" | "opus" | "sonnet" | "haiku" | "keep", "effort": "low" | "medium" | "high" | "xhigh" | "max" | null, "reason": "<one plain sentence the person will read, in the language of their prompt, under 160 characters, naming what about the task drove the choice>", "confidence": <0 to 1>, "alternative": {"model": "...", "effort": "...", "why": "<under 60 characters>"} | null}
 
 Always give an effort for fable, opus and sonnet, in the main pick and the alternative; use null only for haiku and keep. The alternative is the strongest runner-up the person might reasonably prefer (often a stronger model at lower effort, or a cheaper one); use null when nothing else is close.
 
