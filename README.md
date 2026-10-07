@@ -12,7 +12,7 @@
 <p align="center"><a href="#install">Install</a> · <a href="docs/how-it-works.md">How it works</a> · <a href="#sources">Sources</a></p>
 
 <div align="center">
-  <video src="https://github.com/user-attachments/assets/903c5b66-5239-4210-baf1-638957a03dc2" width="720" controls muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/c4d93400-3260-4c0f-8cbd-a36927914642" width="720" controls muted playsinline></video>
 </div>
 
 Claude Session Router is a Claude Code plugin that picks the model and effort for each new session.
