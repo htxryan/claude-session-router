@@ -12,14 +12,16 @@ import json, re, subprocess, concurrent.futures as cf
 src = open('router/pick.ts').read()
 system = re.search(r"export const ANSWER_SYSTEM = `(.*?)`\n", src, re.S).group(1)
 # (answer, recommended, current, expected model, expected effort or '*')
-R_SON, R_FAB, R_HAI = 'Sonnet 5.5 · medium', 'Fable 5.1 · max', 'Haiku 4.5'
+R_SON, R_FAB, R_HAI = 'Sonnet 5.5 · medium', 'Fable 5.1 · max', 'Haiku 5.5 · medium'
 C_OH, C_OM = 'Opus 5.5 · high', 'Opus 5.5 · medium'
 cases = [
  ('fable max', R_SON, C_OH, 'fable', 'max'),
  ('not opus, use sonnet', R_SON, C_OH, 'sonnet', 'medium'),
  ("don't use opus or fable", R_SON, C_OH, '*', '*'),
  ('fable is overkill, use opus', R_FAB, C_OM, 'opus', 'medium'),
- ('sonnet? no, haiku', R_SON, C_OH, 'haiku', None),
+ ('sonnet? no, haiku', R_SON, C_OH, 'haiku', 'medium'),
+ ('haiku at low effort', R_SON, C_OH, 'haiku', 'low'),
+ ('haiku 4.5', R_SON, C_OH, 'unclear', '*'),
  ('no fable with max, too slow', R_FAB, C_OH, 'notfable', '*'),
  ('instead of fable with opus', R_FAB, C_OM, 'opus|keep', '*'),
  ('keep opus', R_SON, 'Opus 5.5 · xhigh', 'keep', '*'),

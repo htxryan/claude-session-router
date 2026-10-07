@@ -12,14 +12,13 @@ export const LATEST: Record<Family, { id: string; name: string }> = {
   fable: { id: 'claude-fable-5-1', name: 'Fable 5.1' },
   opus: { id: 'claude-opus-5-5', name: 'Opus 5.5' },
   sonnet: { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5' },
-  haiku: { id: 'claude-haiku-4-5', name: 'Haiku 4.5' },
+  haiku: { id: 'claude-haiku-5-5', name: 'Haiku 5.5' },
 }
 
-// What each family runs at in Claude Code when nobody names an effort.
-const DEFAULT_EFFORT: Record<Exclude<Family, 'haiku'>, Effort> = { fable: 'high', opus: 'medium', sonnet: 'medium' }
+// What each family's latest model runs at in Claude Code when nobody names an effort.
+const DEFAULT_EFFORT: Record<Family, Effort> = { fable: 'high', opus: 'medium', sonnet: 'medium', haiku: 'medium' }
 
-const effortFor = (family: Family, effort: Effort | null): Effort | null =>
-  family === 'haiku' ? null : (effort ?? DEFAULT_EFFORT[family])
+const effortFor = (family: Family, effort: Effort | null): Effort => effort ?? DEFAULT_EFFORT[family]
 
 export type Rec = {
   family: Family | 'keep'
@@ -54,12 +53,15 @@ export function modelName(model: string): string {
 
 // Opus 5.5 and later models ignore a top-level effortLevel in user settings.
 export const ignoresTopLevelEffort = (model: string): boolean =>
-  ['claude-opus-5-5', 'claude-sonnet-5-5'].includes(baseId(model))
+  ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'].includes(baseId(model))
+
+// Haiku 4.5 and earlier have no effort levels; Haiku 5.5 is the first that does.
+export const hasEffort = (model: string): boolean => familyOf(model) !== 'haiku' || isLatest(model)
 
 // The effort a model runs at in Claude Code when nobody sets one.
 export function defaultEffortOf(model: string): Effort | null {
   const family = familyOf(model)
-  if (family === 'haiku') return null
+  if (!hasEffort(model)) return null
   if (family && isLatest(model)) return DEFAULT_EFFORT[family]
   return baseId(model).includes('opus-4-7') ? 'xhigh' : 'high'
 }
@@ -81,12 +83,11 @@ export function allowedFamilies(exclude: unknown): Family[] {
   return FAMILIES.filter(f => !words.includes(f))
 }
 
-// Every label names an effort, except Haiku's: it has no effort levels.
-export const label = (family: Family, effort: Effort | null): string =>
-  family === 'haiku' ? LATEST[family].name : `${LATEST[family].name} · ${effort ?? 'default effort'}`
+export const label = (family: Family, effort: Effort | null): string => `${LATEST[family].name} · ${effort ?? 'default effort'}`
 
+// The current setting names an effort, except on a model without effort levels (Haiku 4.5).
 export const currentLabel = (c: Current): string =>
-  c.family === 'haiku' ? modelName(c.model) : `${modelName(c.model)} · ${c.effort ?? 'default effort'}`
+  hasEffort(c.model) ? `${modelName(c.model)} · ${c.effort ?? 'default effort'}` : modelName(c.model)
 
 export function routerInput(args: {
   prompt: string
@@ -174,7 +175,7 @@ export type Option = { label: string; choice: Choice }
 
 // Whether a choice is what the session already runs on.
 export const isCurrent = (choice: { family: Family; effort: Effort | null }, current: Current): boolean =>
-  isLatest(current.model) && choice.family === current.family && (choice.family === 'haiku' || choice.effort === current.effort)
+  isLatest(current.model) && choice.family === current.family && choice.effort === current.effort
 
 // The choices in the picker. A pick that is just the current setting (asked
 // anyway under askIfSame) is offered as keeping it.
@@ -204,9 +205,8 @@ The input is JSON: their answer, the recommended model and effort, and the sessi
 Reply with one JSON object and nothing else: {"model": "keep" | "fable" | "opus" | "sonnet" | "haiku" | "unclear", "effort": "low" | "medium" | "high" | "xhigh" | "max" | null}
 
 - "keep": stay on the current model at its current effort, changing nothing (e.g. "keep it", "no change", "current is fine", or naming the current model without a new effort).
-- Otherwise the model they ask for, and always an effort for fable, opus and sonnet: the one they ask for ("maximum", "lowest" or "bump it up" map to a level); if they name none, the current effort for the current model, the recommended effort for the recommended model, and otherwise "medium" for opus and sonnet or "high" for fable. Never an effort they turned down.
+- Otherwise the model they ask for, and always an effort: the one they ask for ("maximum", "lowest" or "bump it up" map to a level); if they name none, the current effort for the current model, the recommended effort for the recommended model, and otherwise "medium" for opus, sonnet and haiku or "high" for fable. Never an effort they turned down.
 - An effort alone applies to the recommended model; "keep the model but at high" means the current model at that effort.
-- Haiku has no effort: always null.
 - Models or efforts they turn down ("not opus", "max isn't needed") are not their choice.
 - "unclear" when you can't tell, when they ask for something other than these four latest models (an older version such as "opus 4.8"), or when the answer isn't about choosing a model.`
 
@@ -227,7 +227,7 @@ export function plainAnswer(answer: string, rec: Rec, current: Current): Choice 
   const family = words.length <= 2 ? (FAMILIES.find(f => words[0] === f) ?? null) : null
   const effort = asEffort(family ? (words[1] ?? '') : words.length === 1 ? words[0] : '')
   if (family && (words.length === 1 || effort)) return { family, effort: effortFor(family, effort ?? inheritedEffort(family, rec, current)) }
-  if (!family && effort && rec.family !== 'keep' && rec.family !== 'haiku') return { family: rec.family, effort }
+  if (!family && effort && rec.family !== 'keep') return { family: rec.family, effort }
   return undefined
 }
 
@@ -245,7 +245,7 @@ export function parseAnswer(text: string, rec: Rec, current: Current): Choice | 
   if (String(raw.model).toLowerCase() === 'keep') {
     // "Keep the model, but at high": the current model at that effort.
     const family = current.family
-    return effort && family && family !== 'haiku' && isLatest(current.model) ? { family, effort } : null
+    return effort && family && isLatest(current.model) ? { family, effort } : null
   }
   const family = asFamily(raw.model)
   return family ? { family, effort: effortFor(family, effort ?? inheritedEffort(family, rec, current)) } : 'unrecognized'
