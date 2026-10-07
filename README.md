@@ -64,4 +64,4 @@ The guidance the skill is built on:
 
 ---
 
-<p align="center">Made with ❤️ by <a href="https://ryanhenderson.dev">Ryan Henderson</a></p>
+<p align="center">Made with Claude by <a href="https://ryanhenderson.dev">Ryan Henderson</a></p>
