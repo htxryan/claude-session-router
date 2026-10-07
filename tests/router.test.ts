@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { allowedFamilies, isCloseEnough, options, parseRec, resolveAnswer, restrict } from '../router/pick'
+import { allowedFamilies, currentLabel, defaultEffortOf, isCloseEnough, modelName, options, parseRec, resolveAnswer, restrict } from '../router/pick'
 import type { Current } from '../router/pick'
 
 const OPUS_XHIGH: Current = { family: 'opus', model: 'claude-opus-5-5', effort: 'xhigh' }
@@ -14,7 +14,7 @@ const SONNET_PICK = JSON.stringify({
   alternative: { model: 'opus', effort: 'low', why: 'stronger model, similar cost' },
 })
 
-type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number }
+type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string }
 
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
@@ -25,7 +25,7 @@ function engine(on: On, env: Env = {}) {
   const value = <T>(v: T) => ({ value: v }) as never
   on('session.turns', () => value(env.turns ?? 0))
   on('session.surfaces', () => value(env.surfaces ?? ['terminal']))
-  on('session.model', () => value('claude-opus-5-5'))
+  on('session.model', () => value(env.model ?? 'claude-opus-5-5'))
   on('session.cwd', () => value('/Users/me/src/example-app'))
   on('settings.read', () => value({ effortLevel: 'xhigh', modelSettings: { 'claude-opus-5-5': { effortLevel: 'high' } } }))
   on('env.get', () => value(undefined))
@@ -98,6 +98,22 @@ describe('pick logic', () => {
     expect(resolveAnswer('Haiku please', opts)).toEqual({ family: 'haiku', effort: null })
     expect(resolveAnswer('sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
     expect(resolveAnswer('whatever', opts)).toBe('unrecognized')
+  })
+})
+
+describe('model names', () => {
+  test('names any model ID and knows its default effort', () => {
+    expect(modelName('claude-opus-5-5')).toBe('Opus 5.5')
+    expect(modelName('claude-opus-4-8')).toBe('Opus 4.8')
+    expect(modelName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5')
+    expect(modelName('claude-sonnet-5-5[1m]')).toBe('Sonnet 5.5')
+    expect(modelName('claude-mythos-5-1')).toBe('claude-mythos-5-1')
+    expect(defaultEffortOf('claude-opus-5-5')).toBe('medium')
+    expect(defaultEffortOf('claude-opus-4-8')).toBe('high')
+    expect(defaultEffortOf('claude-opus-4-7')).toBe('xhigh')
+    expect(currentLabel({ family: 'opus', model: 'claude-opus-4-8', effort: 'high' })).toBe('Opus 4.8 · high')
+    const rec = parseRec('{"model":"opus","effort":"high","reason":"x"}')!
+    expect(isCloseEnough(rec, { family: 'opus', model: 'claude-opus-4-8', effort: 'high' })).toBe(false)
   })
 })
 
@@ -221,7 +237,7 @@ describe('routing a session', () => {
 
   test('the bypass prefix skips routing and is removed', async ($, on) => {
     const calls = engine(on)
-    const sent = await submit($, '!! just do it')
+    const sent = await submit($, '~~ just do it')
     expect(sent.text).toBe('just do it')
     expect(calls.router).toBe(0)
   })
@@ -234,11 +250,55 @@ describe('routing a session', () => {
   })
 
   test('/clear resets routing so the next first prompt routes again', async ($, on) => {
-    const calls = engine(on)
+    const env: Env = {}
+    const calls = engine(on, env)
     await submit($, 'Add a --dry-run flag')
+    env.turns = 1 // Claude Code keeps counting turns across /clear
     await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} as never })
     expect(await routerSays($)).toMatch(/^Not routed yet/)
     await submit($, 'Something else')
     expect(calls.router).toBe(2)
+  })
+
+  test("this plugin's own commands are not routed", async ($, on) => {
+    const calls = engine(on)
+    await submit($, '/session-router:choose-model fix a typo')
+    expect(calls.router).toBe(0)
+  })
+
+  test('/effort ends only the effort part of the switch; /model ends all of it', async ($, on) => {
+    engine(on)
+    const seen: { model: string; effort?: unknown }[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push({ model: e.model, effort: e.effort })
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
+    })
+    on('command.run', (_$, e) => ({ text: '' }) as never)
+    await submit($, 'Add a --dry-run flag to scripts/sync.py')
+    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
+    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'low', messageCount: 1 }
+    await $.command.run({ command: 'effort', args: 'low', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+    await drain(step)
+    expect(seen[0]).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' })
+    expect(await routerSays($)).toMatch(/the model switch still applies/)
+    await $.command.run({ command: 'model', args: 'opus', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+    await drain(step)
+    expect(seen[1]).toEqual({ model: 'claude-opus-5-5', effort: 'low' })
+  })
+
+  test('ask-when-close asks even when the router would keep the current model', { options: { askWhenClose: true } }, async ($, on) => {
+    const reply = JSON.stringify({ model: 'keep', effort: null, reason: 'Opus at high already fits.', alternative: { model: 'sonnet', effort: 'medium', why: 'faster' } })
+    const calls = engine(on, { reply })
+    await submit($, 'Fix the pagination bug')
+    expect(calls.options[0]).toEqual(['Keep Opus 5.5 · high (Recommended)', 'Sonnet 5.5 · medium — faster'])
+    expect(calls.asked[0]).toMatch(/Keep Opus 5\.5 · high\?$/)
+    expect(await routerSays($)).toMatch(/^Kept the current model/)
+  })
+
+  test('an older model is named as itself and offered the upgrade', async ($, on) => {
+    const reply = JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits Opus.', alternative: null })
+    const calls = engine(on, { reply, model: 'claude-opus-4-8' })
+    await submit($, 'Design the sync protocol')
+    expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 4.8 · high (current)'])
   })
 })

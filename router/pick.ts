@@ -34,6 +34,33 @@ export type Current = { family: Family | null; model: string; effort: Effort | n
 export const familyOf = (model: string): Family | null =>
   FAMILIES.find(f => model.toLowerCase().includes(f)) ?? null
 
+// The model ID without a context suffix ("[1m]") or a date stamp.
+const baseId = (model: string): string => model.toLowerCase().replace(/\[.*\]$/, '').replace(/-\d{8}$/, '')
+
+// Whether this is the latest model of its family, the one the router switches to.
+export const isLatest = (model: string): boolean => {
+  const family = familyOf(model)
+  return family !== null && baseId(model) === LATEST[family].id
+}
+
+// A readable name for any Claude model ID: "claude-opus-4-8" is "Opus 4.8".
+export function modelName(model: string): string {
+  const family = familyOf(model)
+  if (!family) return model
+  if (isLatest(model)) return LATEST[family].name
+  const version = baseId(model).split(`${family}-`)[1]?.match(/^\d+(-\d+)?/)?.[0]
+  const title = family[0]!.toUpperCase() + family.slice(1)
+  return version ? `${title} ${version.replace('-', '.')}` : model
+}
+
+// The effort a model runs at in Claude Code when nobody sets one.
+export function defaultEffortOf(model: string): Effort | null {
+  const family = familyOf(model)
+  if (family === 'haiku') return null
+  if (family && isLatest(model)) return DEFAULT_EFFORT[family]
+  return baseId(model).includes('opus-4-7') ? 'xhigh' : 'high'
+}
+
 const asEffort = (v: unknown): Effort | null =>
   typeof v === 'string' && (EFFORTS as readonly string[]).includes(v) ? (v as Effort) : null
 
@@ -52,7 +79,7 @@ export const label = (family: Family, effort: Effort | null): string =>
   family === 'haiku' ? LATEST[family].name : `${LATEST[family].name} · ${effort ?? 'default effort'}`
 
 export const currentLabel = (c: Current): string =>
-  c.family ? label(c.family, c.effort) : `${c.model} · ${c.effort ?? 'default effort'}`
+  c.family === 'haiku' ? modelName(c.model) : `${modelName(c.model)} · ${c.effort ?? 'default effort'}`
 
 export function routerInput(args: {
   prompt: string
@@ -134,7 +161,7 @@ const effortGap = (a: Effort | null, b: Effort | null): number | null =>
 // only nag: same family and effort within one level (or no effort involved).
 export function isCloseEnough(rec: Rec, current: Current): boolean {
   if (rec.family === 'keep') return true
-  if (rec.family !== current.family) return false
+  if (rec.family !== current.family || !isLatest(current.model)) return false
   if (rec.family === 'haiku' || rec.effort === null) return true
   const gap = effortGap(rec.effort, current.effort)
   return gap !== null && gap < 2
@@ -157,8 +184,9 @@ export function options(rec: Rec, current: Current): Option[] {
       choice: { family: alt.family, effort: alt.effort },
     })
   }
-  out.push({ label: `Keep ${currentLabel(current)} (current)`, choice: null })
-  return out
+  const keep = { label: `Keep ${currentLabel(current)} (current)`, choice: null }
+  // When the router's answer is to keep the current model, that comes first.
+  return rec.family === 'keep' ? [{ ...keep, label: `${keep.label.slice(0, -' (current)'.length)} (Recommended)` }, ...out] : [...out, keep]
 }
 
 // Maps the picker's answer to a choice; null keeps the current model.
