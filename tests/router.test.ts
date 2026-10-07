@@ -197,7 +197,7 @@ describe('routing a session', () => {
     expect(sent.text).toBe('Add a --dry-run flag to scripts/sync.py')
     expect(calls.router).toBe(1)
     expect(calls.skillReads[0]).toMatch(/skills\/choose-model\/SKILL\.md$/)
-    expect(calls.asked[0]).toMatch(/Run this session on Sonnet 5\.5 · medium\?$/)
+    expect(calls.asked[0]).not.toMatch(/\?$/)
     expect(calls.options[0]).toEqual(['Sonnet 5.5 · medium (Recommended)', 'Opus 5.5 · low — stronger model, similar cost', 'Keep Opus 5.5 · high (current)'])
     expect(await routerSays($)).toMatch(/^Routed to Sonnet 5\.5 · medium\./)
   })
@@ -361,7 +361,7 @@ describe('routing a session', () => {
     const calls = engine(on, { reply })
     await submit($, 'Fix the pagination bug')
     expect(calls.options[0]).toEqual(['Keep Opus 5.5 · high (Recommended)', 'Sonnet 5.5 · medium — faster'])
-    expect(calls.asked[0]).toMatch(/Keep Opus 5\.5 · high\?$/)
+    expect(calls.asked[0]).toBe('Opus at high already fits.')
     expect(await routerSays($)).toMatch(/^Kept the current model/)
   })
 
@@ -407,7 +407,7 @@ describe('routing a session', () => {
   test('with fast mode on, a non-Opus pick says fast mode only applies to Opus', async ($, on) => {
     const calls = engine(on, { fast: true })
     await submit($, 'Add a --dry-run flag')
-    expect(calls.asked[0]).toMatch(/Fast mode only applies to Opus\. Run this session on Sonnet 5\.5 · medium\?$/)
+    expect(calls.asked[0]).toMatch(/Fast mode only applies to Opus\.$/)
   })
 
   test('says so when another model answered the first routed turn', async ($, on) => {
