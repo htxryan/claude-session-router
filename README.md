@@ -45,9 +45,10 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 
 - **Skip routing for one session:** start the first prompt with `~~`.
 - **See what happened:** `/session-router:explain`, or the line the plugin adds under your first prompt.
-- **Settings** (`/plugin` → session-router): mode `frugal` / `balanced` / `performance`, models to never recommend (e.g. `fable` if you don't have access), router model and effort, and phone (Remote Control) behaviour.
+- **Take over:** picking a model with `/model` ends the switch. Picking an effort with `/effort` ends only the effort part, so the routed model stays. Pressing Esc in either changes nothing.
+- **Settings** (`/plugin` → session-router): mode `frugal` / `balanced` / `performance`, models to never recommend (e.g. `fable` if you don't have access), router model, effort and timeout, and Remote Control behaviour. Over Remote Control the picker shows on your phone by default (`ask`); `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted.
 
-It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
+It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
 
 ## Costs and limits
 
