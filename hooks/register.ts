@@ -1,17 +1,17 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Choice, Effort, Routing } from '../types'
+import type { Choice, Routing } from '../types'
 import {
-  EFFORTS,
-  allowedFamilies,
   LATEST,
+  allowedFamilies,
+  asEffort,
   currentLabel,
   defaultEffortOf,
-  ignoresTopLevelEffort,
   familyOf,
-  isLatest,
+  ignoresTopLevelEffort,
   isCloseEnough,
+  isLatest,
   label,
   options as pickerOptions,
   parseRec,
@@ -19,12 +19,9 @@ import {
   restrict,
   routerInput,
 } from '../router/pick'
-import type { Current, Rec } from '../router/pick'
+import type { Current } from '../router/pick'
 
 const routing = atom({ plugin: 'session-router', key: 'routing' } as const, null)
-
-const asEffort = (v: unknown): Effort | null =>
-  typeof v === 'string' && (EFFORTS as readonly string[]).includes(v) ? (v as Effort) : null
 
 // The session's effort, resolved as Claude Code does: CLAUDE_CODE_EFFORT_LEVEL,
 // then the per-model setting, then a top-level effortLevel (which Opus 5.5 and
@@ -37,11 +34,10 @@ async function readCurrent($: EngineInterface): Promise<Current> {
   const settings = await $.settings.read()
   const perModel = (settings.modelSettings ?? {}) as Record<string, { effortLevel?: unknown } | undefined>
   const key = Object.keys(perModel).find(k => model.startsWith(k) || k.startsWith(model.replace(/\[.*\]$/, '')))
-  const topLevel = ignoresTopLevelEffort(model) ? null : asEffort(settings.effortLevel)
   const effort =
     asEffort(await $.env.get('CLAUDE_CODE_EFFORT_LEVEL')) ??
     asEffort(key ? perModel[key]?.effortLevel : undefined) ??
-    topLevel ??
+    (ignoresTopLevelEffort(model) ? null : asEffort(settings.effortLevel)) ??
     defaultEffortOf(model)
   return { family, model, effort }
 }
@@ -56,8 +52,7 @@ async function replies($: EngineInterface): Promise<number> {
 
 // Whether /fast is on: it only speeds up Opus.
 async function fastModeOn($: EngineInterface): Promise<boolean> {
-  const rows = await $.config.list()
-  return rows.some(r => r.key === 'fast' && r.value === true)
+  return (await $.config.list()).some(r => r.key === 'fast' && r.value === true)
 }
 
 // A turn Claude Code starts by itself to show the model a shell command's
@@ -72,18 +67,16 @@ async function log($: EngineInterface, entry: Record<string, unknown>): Promise<
 
 function describe(r: Routing | null): string {
   if (!r) return 'Not routed yet: the next first prompt of a session (or after /clear) will be.'
-  const what =
-    r.status === 'routed' && r.applied
-      ? `Routed to ${label(r.applied.family, r.applied.effort)}`
-      : r.status === 'kept'
-        ? 'Kept the current model'
-        : 'Routing skipped'
+  if (r.status !== 'routed' || !r.applied) {
+    return `${r.status === 'kept' ? 'Kept the current model' : 'Routing skipped'}. ${r.reason}`
+  }
   const note =
-    r.status !== 'routed' ? ''
-    : r.overridden ? ' You have since changed the model yourself, so the switch has ended.'
-    : r.effortOverridden ? ' You have since changed the effort yourself; the model switch still applies.'
-    : ''
-  return `${what}. ${r.reason}${note}`
+    r.override === 'model'
+      ? ' You have since changed the model yourself, so the switch has ended.'
+      : r.override === 'effort'
+        ? ' You have since changed the effort yourself; the model switch still applies.'
+        : ''
+  return `Routed to ${label(r.applied.family, r.applied.effort)}. ${r.reason}${note}`
 }
 
 async function settle($: EngineInterface, value: Routing | null, statusLine?: string) {
@@ -109,34 +102,26 @@ async function notice($: EngineInterface, text: string): Promise<void> {
   }
 }
 
-const why = (reason: string) => ` Why: ${reason}`
+const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${Math.round(ms / 1000)} s`)
 
 export const register: Register = (on, options) => {
   const mode = String(options.mode ?? 'balanced')
   const remoteMode = String(options.remoteMode ?? 'ask')
   const prefix = String(options.bypassPrefix ?? '')
   const allowed = allowedFamilies(options.excludeModels)
-  let checked = false
-  // Model replies that don't count as the session getting under way: the
-  // ones to shell commands run before the first prompt.
-  let baseReplies = 0
+  const timeoutMs = Number(options.timeoutMs ?? 30000)
+
+  // Per-session bookkeeping, reset by /clear.
+  let checked = false // the first routed turn's answering model was checked
+  let baseReplies = 0 // replies to shell commands run before the first prompt
   let shellTurn: string | null = null
-  // Set when Esc cancels the prompt while routing: the turn Claude Code still
-  // starts for it doesn't count as the session getting under way.
-  let cancelled = false
+  let cancelled = false // Esc cancelled the prompt while routing
   // The decision, noted under the prompt once its turn starts (a plugin's
   // append made after the prompt is handed on does not land).
   let pending: string | null = null
-  const announce = <E, R>(next: (e: E) => R, e: E, text: string): R => {
-    pending = text
-    return next(e)
-  }
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({
-      name: 'router',
-      description: "Shows which model this session was routed to, and why.",
-    })
+    await $.command.register({ name: 'router', description: 'Shows which model this session was routed to, and why.' })
     return next(e)
   })
 
@@ -145,11 +130,9 @@ export const register: Register = (on, options) => {
   // The person changing the model ends the switch; changing the effort ends
   // only the effort part of it.
   on('command.run', async ($, e, next) => {
-    if (e.command === 'model') {
-      await update($, routing, r => (r && r.status === 'routed' ? { ...r, overridden: true } : r))
-    }
-    if (e.command === 'effort') {
-      await update($, routing, r => (r && r.status === 'routed' ? { ...r, effortOverridden: true } : r))
+    const override: Routing['override'] | null = e.command === 'model' ? 'model' : e.command === 'effort' ? 'effort' : null
+    if (override) {
+      await update($, routing, r => (r?.status === 'routed' && r.override !== 'model' ? { ...r, override } : r))
     }
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -157,44 +140,51 @@ export const register: Register = (on, options) => {
   // /clear ends the session without a new session.start.
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
+      checked = cancelled = false
       baseReplies = 0
-      shellTurn = null
-      checked = false
-      cancelled = false
-      pending = null
+      shellTurn = pending = null
       await settle($, null)
     }
     return next(e)
   })
 
   on('prompt.submit', async ($, e, next) => {
-    // Only the very first prompt of a session: never once any turn has run,
-    // and never for a prompt typed while the first turn is still running.
+    // Only the very first prompt of a session: never once the model has
+    // replied, and never for a prompt typed while the first turn runs.
     if (e.turnId !== undefined) return next(e)
     if ((await read($, routing)) !== null || (await replies($)) > baseReplies) return next(e)
     // This plugin's own commands (asking choose-model for advice) aren't work to route.
     if (e.text.trimStart().startsWith('/session-router:')) return next(e)
 
-    const kind = e.origin.kind
-    const surfaces = await $.session.surfaces()
     // Your Enter in the terminal, the desktop app (an SDK host with a surface
     // attached), or Remote Control. Headless runs, notifications, peers and
     // schedules pass through unrouted.
-    const isPerson = kind === 'composer' || kind === 'bridge' || (kind === 'sdk' && surfaces.length > 0)
+    const kind = e.origin.kind
+    const isPerson = kind === 'composer' || kind === 'bridge' || (kind === 'sdk' && (await $.session.surfaces()).length > 0)
     if (!isPerson) return next(e)
     const isRemote = kind === 'bridge'
 
-    if (isRemote && remoteMode === 'skip') {
-      await settle($, { status: 'skipped', applied: null, reason: 'Remote Control sessions are set to skip routing.', overridden: false })
-      return announce(next, e, 'skipped (Remote Control sessions are set to skip routing).')
+    // Records the decision and sends the prompt on, noting it once the turn starts.
+    const decide = async (value: Routing, text: string, statusLine?: string, logged: Record<string, unknown> = {}, sent = e) => {
+      await settle($, value, statusLine)
+      await log($, { origin: kind, excerpt: e.text.slice(0, 200), status: value.status, reason: value.reason, ...logged })
+      pending = text
+      return next(sent)
     }
-    if (prefix && e.text.startsWith(prefix) && e.text.slice(prefix.length).trim() !== '') {
-      await settle($, { status: 'skipped', applied: null, reason: `Bypassed with ${prefix}.`, overridden: false })
-      return announce(next, { ...e, text: e.text.slice(prefix.length).trimStart() }, `skipped for this session (${prefix} prefix).`)
+    const skipped = (reason: string): Routing => ({ status: 'skipped', applied: null, reason })
+    const kept = (reason: string): Routing => ({ status: 'kept', applied: null, reason })
+
+    if (isRemote && remoteMode === 'skip') {
+      return decide(skipped('Remote Control sessions are set to skip routing.'), 'skipped (Remote Control sessions are set to skip routing).')
+    }
+    const typed = e.text.trimStart()
+    if (prefix && typed.startsWith(prefix) && typed.slice(prefix.length).trim() !== '') {
+      const text = typed.slice(prefix.length).trimStart()
+      return decide(skipped(`Bypassed with ${prefix}.`), `skipped for this session (${prefix} prefix).`, undefined, {}, { ...e, text })
     }
 
     const current = await readCurrent($)
-    const timeoutMs = Number(options.timeoutMs ?? 30000)
+    const now = currentLabel(current)
     $.ui.status('routing…')
     const reply = await $.model.complete(
       {
@@ -222,78 +212,65 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     const parsed = reply.isAnswered ? parseRec(reply.text) : null
-    const rec: Rec | null = parsed && restrict(parsed, allowed)
-    const entry = { origin: kind, project: await $.session.cwd(), excerpt: e.text.slice(0, 200), current, rec }
+    const rec = parsed && restrict(parsed, allowed)
+    const why = rec ? ` Why: ${rec.reason}` : ''
 
     if (!rec) {
-      const failure = reply.isAnswered
-        ? 'unreadable reply'
-        : reply.reason === 'aborted'
-          ? `timed out after ${timeoutMs < 1000 ? `${timeoutMs} ms` : `${Math.round(timeoutMs / 1000)} s`}`
-          : reply.reason
-      await settle($, { status: 'skipped', applied: null, reason: `Router unavailable (${failure}).`, overridden: false })
-      await log($, { ...entry, outcome: 'router-failed' })
-      return announce(next, e, `unavailable (${failure}); this session stays on ${currentLabel(current)}.`)
+      const failure = reply.isAnswered ? 'unreadable reply' : reply.reason === 'aborted' ? `timed out after ${duration(timeoutMs)}` : reply.reason
+      return decide(skipped(`Router unavailable (${failure}).`), `unavailable (${failure}); this session stays on ${now}.`)
     }
+    const suggested = rec.family === 'keep' ? `keeping ${now}` : label(rec.family, rec.effort)
 
     if (options.shadow === true) {
-      const would = rec.family === 'keep' ? 'keep the current model' : `pick ${label(rec.family, rec.effort)}`
-      await settle($, { status: 'kept', applied: null, reason: `Shadow mode: would ${would}. ${rec.reason}`, overridden: false })
-      await log($, { ...entry, outcome: 'shadow' })
-      return announce(next, e, `shadow mode, would ${would}; staying on ${currentLabel(current)}.${why(rec.reason)}`)
+      const would = rec.family === 'keep' ? 'keep the current model' : `pick ${suggested}`
+      return decide(kept(`Shadow mode: would ${would}. ${rec.reason}`), `shadow mode, would ${would}; staying on ${now}.${why}`)
     }
 
     const askAnyway = options.askWhenClose === true && (rec.family !== 'keep' || rec.alternative !== null)
     if (!askAnyway && (rec.family === 'keep' || isCloseEnough(rec, current))) {
-      await settle($, { status: 'kept', applied: null, reason: rec.reason, overridden: false }, `kept ${currentLabel(current)}`)
-      await log($, { ...entry, outcome: 'close-enough' })
-      const close = rec.family === 'keep' ? 'no reason to switch' : `close enough to its pick, ${label(rec.family, rec.effort)}`
-      return announce(next, e, `staying on ${currentLabel(current)} (${close}).${why(rec.reason)}`)
+      const close = rec.family === 'keep' ? 'no reason to switch' : `close enough to its pick, ${suggested}`
+      return decide(kept(rec.reason), `staying on ${now} (${close}).${why}`, `kept ${now}`)
     }
 
-    let choice: Choice
+    let choice: Choice = null
     let answer: string | null = null
     if (isRemote && remoteMode === 'auto') {
       choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
     } else {
       const opts = pickerOptions(rec, current)
+      const fastNote =
+        rec.family !== 'keep' && rec.family !== 'opus' && (await fastModeOn($)) ? ' (Fast mode only applies to Opus.)' : ''
+      const question = rec.family === 'keep' ? `Keep ${now}?` : `Run this session on ${suggested}?${fastNote}`
       try {
-        const fastNote =
-          rec.family !== 'keep' && rec.family !== 'opus' && (await fastModeOn($)) ? ' (Fast mode only applies to Opus.)' : ''
-        const question =
-          rec.family === 'keep' ? `Keep ${currentLabel(current)}?` : `Run this session on ${label(rec.family, rec.effort)}?${fastNote}`
-        answer = await $.ui.ask(`${rec.reason} ${question}`, {
-          header: 'Model',
-          options: opts.map(o => o.label),
-        })
+        answer = await $.ui.ask(`${rec.reason} ${question}`, { header: 'Model', options: opts.map(o => o.label) })
         const resolved = resolveAnswer(answer, opts, rec)
-        if (resolved === 'unrecognized') $.ui.toast(`Didn't recognize "${answer}"; staying on ${currentLabel(current)}`)
-        choice = resolved === 'unrecognized' ? null : resolved
+        if (resolved === 'unrecognized') $.ui.toast(`Didn't recognize "${answer}"; staying on ${now}`)
+        else choice = resolved
       } catch {
-        choice = null // Esc, or the surface couldn't show the picker: keep the current model
+        // Esc, or the surface couldn't show the picker: keep the current model.
       }
     }
 
-    const suggested = rec.family === 'keep' ? `keeping ${currentLabel(current)}` : label(rec.family, rec.effort)
     const isSame =
       choice !== null &&
       isLatest(current.model) &&
       choice.family === current.family &&
       (choice.effort === null || choice.effort === current.effort)
     if (choice === null || isSame) {
-      await settle($, { status: 'kept', applied: null, reason: rec.reason, overridden: false }, `kept ${currentLabel(current)}`)
-      await log($, { ...entry, answer, outcome: 'kept' })
       const how = answer === null ? 'picker dismissed' : 'you kept it'
-      return announce(next, e, `staying on ${currentLabel(current)} (${how}; it suggested ${suggested}).${why(rec.reason)}`)
+      return decide(kept(rec.reason), `staying on ${now} (${how}; it suggested ${suggested}).${why}`, `kept ${now}`, { answer })
     }
 
     const applied = { family: choice.family, model: LATEST[choice.family].id, effort: choice.effort }
     const picked = label(choice.family, choice.effort)
-    await settle($, { status: 'routed', applied, reason: rec.reason, overridden: false }, `→ ${picked}`)
-    await log($, { ...entry, answer, outcome: 'routed', applied })
     const how =
       answer === null ? 'applied automatically over Remote Control' : picked === suggested ? 'recommended' : `your pick; it suggested ${suggested}`
-    return announce(next, e, `this session runs on ${picked} (${how}; was ${currentLabel(current)}).${why(rec.reason)}`)
+    return decide(
+      { status: 'routed', applied, reason: rec.reason },
+      `this session runs on ${picked} (${how}; was ${now}).${why}`,
+      `→ ${picked}`,
+      { answer, applied },
+    )
   }).catch(($, e, next) => {
     // Never eat the prompt: any failure sends it on the current model.
     $.ui.status(undefined)
@@ -307,19 +284,16 @@ export const register: Register = (on, options) => {
       cancelled = false
       return next(e)
     }
-    if ((await read($, routing)) === null && isShellTurn(e.text)) {
+    const undecided = (await read($, routing)) === null
+    if (undecided && isShellTurn(e.text)) {
       shellTurn = e.turnId
       return next(e)
     }
     if (pending !== null) {
-      const text = pending
+      await notice($, pending)
       pending = null
-      await notice($, text)
     }
-    if ((await read($, routing)) === null) {
-      const closed: Routing = { status: 'skipped', applied: null, reason: 'The session was already under way.', overridden: false }
-      await update($, routing, () => closed)
-    }
+    if (undecided) await settle($, { status: 'skipped', applied: null, reason: 'The session was already under way.' })
     return next(e)
   })
 
@@ -328,23 +302,23 @@ export const register: Register = (on, options) => {
   // future session. Subagents keep their own models.
   on('turn.step', async function* ($, e, next) {
     const r = await read($, routing)
-    const applied = r && r.status === 'routed' && !r.overridden ? r.applied : null
+    const applied = r?.status === 'routed' && r.override !== 'model' ? r.applied : null
     if (!applied || e.agentId !== undefined) return yield* next(e)
-    const effort = applied.effort && applied.family !== 'haiku' && !r?.effortOverridden ? { effort: applied.effort } : {}
+    const effort = applied.effort && !r?.override ? { effort: applied.effort } : {}
     return yield* next({ ...e, model: applied.model, ...effort })
   })
 
-  // Once, after the first routed turn: say so if another model answered
-  // (a fallback or an allowlist substitution).
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId === undefined && shellTurn !== null && e.turnId === shellTurn) {
+    if (e.agentId !== undefined) return result
+    if (e.turnId === shellTurn) {
       shellTurn = null
       baseReplies = await replies($)
     }
-    if (e.agentId !== undefined || checked) return result
+    // Once, after the first routed turn: say so if another model answered
+    // (a fallback or an allowlist substitution).
     const r = await read($, routing)
-    if (!r || r.status !== 'routed' || !r.applied) return result
+    if (checked || r?.status !== 'routed' || !r.applied) return result
     checked = true
     const used = e.usage?.model
     if (used && familyOf(used) !== r.applied.family) {
