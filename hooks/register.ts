@@ -118,7 +118,10 @@ async function takenOver(
     watching.delete(command)
     return (await $.session.messages()).slice(from).some(m => m.text.includes(`<local-command-stdout>${text}`))
   }
-  if (!r.base) return r.override
+  if (!r.base) {
+    watching.clear() // what was picked before the switch began is its starting point
+    return r.override
+  }
   if (e.model !== r.base.model || (await said('model', 'Set model to'))) return 'model'
   if (e.effort !== r.base.effort || (await said('effort', 'Set effort level to'))) return 'effort'
   return r.override
