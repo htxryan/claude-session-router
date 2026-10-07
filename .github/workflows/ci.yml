@@ -25,6 +25,14 @@ jobs:
         run: claude plugin validate .
       - name: Run the hook tests
         run: claude plugin test .
+      - name: Type check
+        run: |
+          # Loading the plugin makes Claude Code lay this build's types in
+          # .claude-plugin/types/ (gitignored). CI isn't logged in, so the run
+          # stops right after the load.
+          claude -p --plugin-dir . "load the plugin" < /dev/null > /dev/null 2>&1 || true
+          test -f .claude-plugin/types/claude-code/index.d.ts
+          npx -y -p typescript@5.6 tsc -p . --noEmit
       - name: Check the eval files
         run: |
           python3 -m py_compile evals/run.py
