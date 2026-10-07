@@ -54,8 +54,6 @@ It only switches the model for this session. It never runs `/model`, so your sav
 - **One router call per new session.** Before your first prompt is sent, Opus 5.5 at medium effort reads it. That adds a few seconds (about 5 on average) and uses a little of your plan or API credits. If you type your own answer in the picker instead of choosing an option, a second short call at low effort reads it. Later prompts cost nothing extra.
 - **Fable can cost more.** On some plans, Fable usage is billed to usage credits. If you'd rather never be offered it, add `fable` to the models to never recommend.
 
-[How it works](docs/how-it-works.md) · [Tests and evals](docs/how-it-works.md#tests)
-
 ## Sources
 
 The guidance the skill is built on:
