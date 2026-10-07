@@ -346,9 +346,8 @@ export const register: Register = (on, options) => {
         choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
       } else {
         const fastNote = rec.family !== 'keep' && rec.family !== 'opus' && (await fastModeOn($)) ? ' Fast mode only applies to Opus.' : ''
-        const question = rec.family === 'keep' ? `Keep ${now}?` : `Run this session on ${suggested}?`
         try {
-          answer = await $.ui.ask(`${rec.reason}${fastNote} ${question}`, { header: 'Model', options: opts.map(o => o.label) })
+          answer = await $.ui.ask(`${rec.reason}${fastNote}`, { header: 'Model', options: opts.map(o => o.label) })
           // One of the options, or an answer the person typed.
           const option = opts.find(o => o.label === answer)
           resolved = option
