@@ -205,7 +205,7 @@ export function options(rec: Rec, current: Current): Option[] {
 // use sonnet"). An effort on its own applies to the recommended model,
 // unless the answer turned that model down.
 const NEGATIONS = new Set(['not', 'no', 'don', 'dont', 'never', 'without', 'instead', 'rather', 'avoid', 'skip', 'except'])
-const RESUMES = new Set(['use', 'go', 'pick', 'try', 'take', 'prefer', 'want', 'choose'])
+const RESUMES = new Set(['use', 'with', 'go', 'pick', 'try', 'take', 'prefer', 'want', 'choose'])
 
 // The words that count, and the models the answer turned down.
 function meantWords(answer: string): { out: string[]; refused: string[] } {

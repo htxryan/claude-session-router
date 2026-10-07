@@ -43,7 +43,7 @@ sequenceDiagram
 ## Decisions
 
 - **Only the first prompt.** Routing happens only when the session has no turns yet and nothing has been routed. The session counts as under way once the model has replied, so commands like `/effort` or `/status` and `!` shell commands before your first prompt don't stop it being routed. A prompt typed while the first turn runs, a second prompt, a resumed session (`--continue`, `--resume`), notifications and this plugin's own commands are never routed. `/clear` starts over. `/resume` of another conversation ends the switch, and that conversation runs on its own model. If you press Esc while it's routing, the prompt is cancelled and is routed again when you resend it.
-- **Switched per request, not with `/model`.** Running `/model` from a plugin also saves the choice as your account-wide default. The plugin instead rewrites `model` and `effort` on each main-loop request (`turn.step`). If you pick a model with `/model` (even the one the session started on), the switch ends. If you pick an effort with `/effort`, only the effort part ends and the routed model stays. Opening either and pressing Esc changes nothing, and a request Claude Code sends to a fallback model (after a refusal or an overload) goes to that fallback unchanged. `/model` still shows the session's original model as current, because the switch happens per request.
+- **Switched per request, not with `/model`.** Running `/model` from a plugin also saves the choice as your account-wide default. The plugin instead rewrites `model` and `effort` on each main-loop request (`turn.step`). If you pick a model with `/model` (even the one the session started on), the switch ends. If you pick an effort with `/effort`, only the effort part ends and the routed model stays. Opening either and pressing Esc changes nothing, and a request Claude Code retries after a refusal or a failure, or sends to a fallback model, goes as Claude Code sends it. `/model` still shows the session's original model as current, because the switch happens per request.
 - **An explicit `--model` still routes.** Starting with `claude --model sonnet` shows the picker as usual, with your model offered as "Keep … (current)". Start the first prompt with `~~` to skip routing.
 - **Your current effort** is read the way Claude Code resolves it: `CLAUDE_CODE_EFFORT_LEVEL`, then `modelSettings.<model>.effortLevel`, then a top-level `effortLevel` (which Opus 5.5 and Sonnet 5.5 ignore), then the model's default.
 - **Fast mode** only speeds up Opus. When it's on and the pick is another model, the picker says so.
@@ -68,7 +68,7 @@ Update the model table in the skill and `LATEST` in `router/pick.ts` when new mo
 
 ```sh
 claude plugin validate .
-claude plugin test .                                      # 36 tests
+claude plugin test .                                      # 37 tests
 uv run evals/run.py --runs 5                              # 38 prompts
 uv run evals/run.py --runs 5 --probes evals/holdout.json  # 20 held-out prompts
 ```
