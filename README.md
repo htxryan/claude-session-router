@@ -17,9 +17,9 @@
 
 Claude Session Router is a Claude Code plugin that picks the model and effort for each new session.
 
-1. You send the first prompt of a session, or the first after `/clear`.
-2. Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku, plus an effort level.
-3. It tells you why. You confirm or override before the prompt is sent.
+- You send the first prompt of a session, or the first after `/clear`.
+- Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku, plus an effort level.
+- It tells you why. You confirm or override before the prompt is sent.
 
 Later prompts in the session are never routed.
 
