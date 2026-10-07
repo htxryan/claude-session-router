@@ -130,6 +130,8 @@ describe('pick logic', () => {
     expect(resolveAnswer('no fable with max, too slow', opts, fableMax)).toBe('unrecognized')
     expect(resolveAnswer('no fable, use max', opts, fableMax)).toBe('unrecognized')
     expect(resolveAnswer('instead of fable with opus', opts, fableMax)).toEqual({ family: 'opus', effort: 'medium' })
+    expect(resolveAnswer('keep opus', opts, undefined, OPUS_XHIGH)).toEqual({ family: 'opus', effort: 'xhigh' })
+    expect(resolveAnswer("sonnet, opus isn't needed", opts)).toEqual({ family: 'sonnet', effort: 'medium' })
   })
 
   test('a pick that is the current setting is offered as keeping it', () => {
@@ -484,5 +486,66 @@ describe('routing a session', () => {
     await drain(step) // the retry, on the session's own model
     await drain({ ...step, index: 1 })
     expect(seen).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
+  })
+
+  test('a fallback request keeps the routed effort for later requests', async ($, on) => {
+    engine(on)
+    const seen: { model: string; effort?: unknown }[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push({ model: e.model, effort: e.effort })
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null } as never
+    })
+    await submit($, 'Add a --dry-run flag to scripts/sync.py')
+    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
+    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
+    await drain(step)
+    await drain({ ...step, index: 1, model: 'claude-haiku-4-5', effort: undefined })
+    await drain({ ...step, index: 2 })
+    expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium' })
+  })
+
+  test('opening /model again before the first pick was read still ends the switch', async ($, on) => {
+    const env: Env = { rows: ['Add a --dry-run flag'] }
+    engine(on, env)
+    const seen: string[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push(e.model)
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null } as never
+    })
+    on('command.run', () => ({ text: '' }) as never)
+    await submit($, 'Add a --dry-run flag to scripts/sync.py')
+    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
+    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
+    const run = (command: string) => $.command.run({ command, args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+    await drain(step)
+    await run('model')
+    env.rows!.push('<local-command-stdout>Set model to `Opus 5.5` for this session only</local-command-stdout>')
+    await run('model')
+    env.rows!.push('<local-command-stdout>Kept model as Opus 5.5</local-command-stdout>')
+    await drain({ ...step, turnId: 't2' })
+    expect(seen.at(-1)).toBe('claude-opus-5-5')
+  })
+
+  test('a resumed session is not routed, even with no replies left after compaction', async ($, on) => {
+    const calls = engine(on)
+    on('classic.SessionStart', (_$, e) => ({}) as never)
+    await $.classic.SessionStart({ hook_event_name: 'SessionStart', source: 'resume', session_id: 's', transcript_path: '', cwd: '' } as never)
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.router).toBe(0)
+    expect(await routerSays($)).toMatch(/resumed/)
+  })
+
+  test('Claude Code switching the model itself ends the switch without blaming the person', async ($, on) => {
+    engine(on)
+    on('classic.PostModelSwitch', () => ({}) as never)
+    await submit($, 'Add a --dry-run flag')
+    await $.classic.PostModelSwitch({ hook_event_name: 'PostModelSwitch', source: 'auto', from_model: 'claude-opus-5-5', to_model: 'claude-sonnet-5-5' } as never)
+    expect(await routerSays($)).toMatch(/Claude Code has since switched the model itself/)
+  })
+
+  test('the bypass prefix is removed over Remote Control set to skip', { options: { remoteMode: 'skip' } }, async ($, on) => {
+    engine(on)
+    const sent = await submit($, '~~ do it', 'bridge')
+    expect(sent.text).toBe('do it')
   })
 })
