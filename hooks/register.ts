@@ -179,10 +179,10 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // A resumed session (--continue, --resume, /resume) is already under way,
+  // A resumed or forked session (--continue, --resume, /resume) is already under way,
   // even when compaction left no reply in it.
   on('classic.SessionStart', async ($, e, next) => {
-    if (e.source === 'resume' && (await read($, routing)) === null) {
+    if ((e.source === 'resume' || e.source === 'fork') && (await read($, routing)) === null) {
       await settle($, { status: 'skipped', applied: null, reason: 'The session was resumed.' })
     }
     return next(e)
@@ -190,7 +190,8 @@ export const register: Register = (on, options) => {
 
   // Claude Code switching the model by itself (a fallback) ends the switch.
   on('classic.PostModelSwitch', async ($, e, next) => {
-    if (e.source === 'auto') await update($, routing, r => (r?.status === 'routed' && !r.override ? { ...r, override: 'auto' as const } : r))
+    const r = await read($, routing)
+    if (e.source === 'auto' && r?.status === 'routed' && !r.override) await settle($, { ...r, override: 'auto' })
     return next(e)
   })
 

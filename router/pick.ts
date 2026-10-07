@@ -223,10 +223,12 @@ function meantWords(answer: string): { out: string[]; refused: string[] } {
     let dropped = false
     let previous = ''
     for (const w of clause.split(/[^a-z]+/).filter(Boolean)) {
-      if (TRAILING.has(w) && isFamily(previous) && out.at(-1) === previous) {
-        refused.push(out.pop()!)
-      }
+      const after = previous
       previous = w
+      if (TRAILING.has(w) && isFamily(after) && out.at(-1) === after) {
+        refused.push(out.pop()!)
+        continue
+      }
       if (NEGATIONS.has(w)) negated = true
       else if (negated && dropped && RESUMES.has(w)) negated = dropped = false
       else if (!negated) out.push(w)

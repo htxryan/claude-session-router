@@ -132,6 +132,8 @@ describe('pick logic', () => {
     expect(resolveAnswer('instead of fable with opus', opts, fableMax)).toEqual({ family: 'opus', effort: 'medium' })
     expect(resolveAnswer('keep opus', opts, undefined, OPUS_XHIGH)).toEqual({ family: 'opus', effort: 'xhigh' })
     expect(resolveAnswer("sonnet, opus isn't needed", opts)).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(resolveAnswer("haiku won't cut it so use sonnet", opts)).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(resolveAnswer("haiku isn't enough use sonnet high", opts)).toEqual({ family: 'sonnet', effort: 'high' })
   })
 
   test('a pick that is the current setting is offered as keeping it', () => {
