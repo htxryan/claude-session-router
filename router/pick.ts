@@ -40,6 +40,13 @@ const asEffort = (v: unknown): Effort | null =>
 const asFamily = (v: unknown): Family | null =>
   typeof v === 'string' && (FAMILIES as readonly string[]).includes(v) ? (v as Family) : null
 
+// The families the router may recommend, from the excludeModels setting
+// ("fable" or "fable, haiku"). Unknown words are ignored.
+export function allowedFamilies(exclude: unknown): Family[] {
+  const words = typeof exclude === 'string' ? exclude.toLowerCase().split(/[^a-z]+/) : []
+  return FAMILIES.filter(f => !words.includes(f))
+}
+
 // Every label names an effort, except Haiku's: it has no effort levels.
 export const label = (family: Family, effort: Effort | null): string =>
   family === 'haiku' ? LATEST[family].name : `${LATEST[family].name} · ${effort ?? 'default effort'}`
@@ -54,6 +61,7 @@ export function routerInput(args: {
   mode: string
   hasImages: boolean
   preferences: readonly string[]
+  models: readonly Family[]
 }): string {
   const prompt = args.prompt.length > 8000 ? `${args.prompt.slice(0, 8000)}\n[truncated]` : args.prompt
   return JSON.stringify(
@@ -63,6 +71,7 @@ export function routerInput(args: {
       project: args.cwd.split('/').filter(Boolean).slice(-2).join('/'),
       signals: { promptChars: args.prompt.length, hasImages: args.hasImages },
       mode: args.mode,
+      models: args.models,
       preferences: args.preferences,
     },
     null,
@@ -102,6 +111,20 @@ export function parseRec(text: string): Rec | null {
           }
         : null,
   }
+}
+
+// Holds the router to the allowed families: an excluded pick gives way to an
+// allowed runner-up, or else to keeping the current model; an excluded
+// runner-up is dropped.
+export function restrict(rec: Rec, allowed: readonly Family[]): Rec {
+  const ok = (f: Family) => allowed.includes(f)
+  const alternative = rec.alternative && ok(rec.alternative.family) ? rec.alternative : null
+  if (rec.family === 'keep' || ok(rec.family)) return { ...rec, alternative }
+  const excluded = `${LATEST[rec.family].name} is excluded in your settings`
+  if (alternative) {
+    return { ...rec, family: alternative.family, effort: alternative.effort, reason: `${rec.reason} (${excluded}, so this is the runner-up.)`, alternative: null }
+  }
+  return { ...rec, family: 'keep', effort: null, reason: `${rec.reason} (${excluded}.)`, alternative: null }
 }
 
 const effortGap = (a: Effort | null, b: Effort | null): number | null =>

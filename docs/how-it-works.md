@@ -47,6 +47,7 @@ sequenceDiagram
 - **Your current effort** is read the way Claude Code resolves it: `--effort` or `CLAUDE_CODE_EFFORT_LEVEL`, then `modelSettings.<model>.effortLevel`, then the model's default. The 5.5 models ignore a top-level `effortLevel` in user settings.
 - **Fails open.** If the router errors or times out (30 s), the prompt is sent on the current model and the notice says so.
 - **Skipped** for headless runs (`claude -p`), prompts starting with `!!` (configurable), and, if you choose, Remote Control. On the phone the picker shows by default. Setting `remoteMode: auto` applies the pick without asking.
+- **Models to never recommend** (`excludeModels`, e.g. `fable`) are listed as off-limits in the router's input. If the router names one anyway, its allowed runner-up takes its place; if there is none, the current model stays. You can still type an excluded model in the picker.
 - **Modes** only break ties between close options: `frugal` favours the cheapest model that will finish, and `performance` the more capable one.
 - **Where it runs.** Automatic routing needs Claude Code's plugin hooks, and it was tested in the terminal. In Claude Cowork the skill is expected to work through the same plugin format, but automatic routing is untested and probably doesn't run.
 
@@ -65,7 +66,7 @@ Update the model table in the skill and `LATEST` in `router/pick.ts` when new mo
 
 ```sh
 claude plugin validate .
-claude plugin test .                                      # 16 hook tests
+claude plugin test .                                      # 18 hook tests
 uv run evals/run.py --runs 5                              # 38 prompts
 uv run evals/run.py --runs 5 --probes evals/holdout.json  # 18 held-out prompts
 ```

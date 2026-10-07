@@ -1,6 +1,6 @@
 {
   "name": "session-router",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Routes each new session's first prompt to the right Claude model and effort, explains why, and lets you override before it is sent.",
   "author": {
     "name": "Ryan Henderson"
@@ -19,6 +19,12 @@
         "balanced",
         "performance"
       ]
+    },
+    "excludeModels": {
+      "type": "string",
+      "title": "Models to never recommend",
+      "description": "Comma-separated families the router won't suggest, e.g. \"fable\" if you don't have access to it. You can still type one in the picker.",
+      "default": ""
     },
     "routerModel": {
       "type": "string",
