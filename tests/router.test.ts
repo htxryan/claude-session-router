@@ -14,7 +14,7 @@ const SONNET_PICK = JSON.stringify({
   alternative: { model: 'opus', effort: 'low', why: 'stronger model, similar cost' },
 })
 
-type Env = { reading?: string; reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean; rows?: string[] }
+type Env = { reading?: string; reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean; rows?: string[]; whileAsking?: ($: any) => Promise<void> }
 
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
@@ -49,7 +49,8 @@ function engine(on: On, env: Env = {}) {
     if (env.reply === null) return value({ isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded_error', usage: USAGE })
     return value({ isAnswered: true, text: env.reply ?? SONNET_PICK, usage: USAGE })
   })
-  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
+    await env.whileAsking?.($)
     const q = e.questions[0]!
     calls.asked.push(q.question)
     calls.options.push(q.options.map(o => o.label))
@@ -573,5 +574,13 @@ describe('routing a session', () => {
     await submit($, 'Add a --dry-run flag')
     expect(calls.readings.length).toBe(0)
     expect(await routerSays($)).toMatch(/^Kept the current model/)
+  })
+
+  test('a pick made after another turn started the session is not applied', async ($, on) => {
+    const outer = $ as any
+    engine(on, { whileAsking: async () => void (await outer.turn.start({ turnId: 'phone', text: 'from the phone' })) })
+    on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+    await submit($, 'Add a --dry-run flag')
+    expect(await routerSays($)).toMatch(/already under way/)
   })
 })
