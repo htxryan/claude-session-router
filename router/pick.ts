@@ -92,7 +92,7 @@ export function routerInput(args: {
   prompt: string
   current: Current
   cwd: string
-  mode: string
+  style: string
   hasImages: boolean
   preferences: readonly string[]
   models: readonly Family[]
@@ -104,7 +104,7 @@ export function routerInput(args: {
       current: { model: args.current.model, effort: args.current.effort ?? 'unknown' },
       project: args.cwd.split('/').filter(Boolean).slice(-2).join('/'),
       signals: { promptChars: args.prompt.length, hasImages: args.hasImages },
-      mode: args.mode,
+      style: args.style,
       models: args.models,
       preferences: args.preferences,
     },
@@ -165,18 +165,10 @@ export function restrict(rec: Rec, allowed: readonly Family[]): Rec {
   return { ...rec, family: 'keep', effort: null, reason: `${rec.reason} (${excluded}.)`, alternative: null }
 }
 
-const effortGap = (a: Effort | null, b: Effort | null): number | null =>
-  a === null || b === null ? null : Math.abs(EFFORTS.indexOf(a) - EFFORTS.indexOf(b))
-
-// True when the pick is close enough to the current setting that asking would
-// only nag: same family and effort within one level (or no effort involved).
-export function isCloseEnough(rec: Rec, current: Current): boolean {
-  if (rec.family === 'keep') return true
-  if (rec.family !== current.family || !isLatest(current.model)) return false
-  if (rec.family === 'haiku' || rec.effort === null) return true
-  const gap = effortGap(rec.effort, current.effort)
-  return gap !== null && gap < 2
-}
+// True when the pick would change nothing: keep, or the current model at the
+// current effort.
+export const isSame = (rec: Rec, current: Current): boolean =>
+  rec.family === 'keep' || isCurrent({ family: rec.family, effort: rec.effort }, current)
 
 export type Option = { label: string; choice: Choice }
 
@@ -185,7 +177,7 @@ export const isCurrent = (choice: { family: Family; effort: Effort | null }, cur
   isLatest(current.model) && choice.family === current.family && (choice.family === 'haiku' || choice.effort === current.effort)
 
 // The choices in the picker. A pick that is just the current setting (asked
-// anyway under askWhenClose) is offered as keeping it.
+// anyway under askIfSame) is offered as keeping it.
 export function options(rec: Rec, current: Current): Option[] {
   const keeps = rec.family === 'keep' || isCurrent({ family: rec.family, effort: rec.effort }, current)
   const out: Option[] = []

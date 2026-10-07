@@ -11,7 +11,7 @@ import {
   defaultEffortOf,
   familyOf,
   ignoresTopLevelEffort,
-  isCloseEnough,
+  isSame,
   isCurrent,
   label,
   options as pickerOptions,
@@ -160,7 +160,8 @@ const sameModel = (a: string, b: string) => baseId(a) === baseId(b)
 const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${Math.round(ms / 1000)} s`)
 
 export const register: Register = (on, options) => {
-  const mode = String(options.mode ?? 'balanced')
+  const style = String(options.style ?? 'balanced')
+  const mode = options.mode === 'shadow' || options.mode === 'auto' ? options.mode : 'default'
   const remoteMode = String(options.remoteMode ?? 'ask')
   const prefix = String(options.bypassPrefix ?? '')
   const routerModel = String(options.routerModel ?? 'claude-opus-5-5')
@@ -238,12 +239,15 @@ export const register: Register = (on, options) => {
       if (e.text.trimStart().startsWith('/session-router:')) return next(e)
 
       // Your Enter in the terminal, the desktop app (an SDK host with a surface
-      // attached), or Remote Control. Headless runs, notifications, peers and
-      // schedules pass through unrouted.
+      // attached), or Remote Control; in auto mode, headless runs (claude -p,
+      // the Agent SDK) too, since nobody needs to be asked. Notifications,
+      // peers and schedules pass through unrouted.
       const kind = e.origin.kind
-      const isPerson = kind === 'composer' || kind === 'bridge' || (kind === 'sdk' && (await $.session.surfaces()).length > 0)
-      if (!isPerson) return next(e)
+      const headless = kind === 'sdk' && (await $.session.surfaces()).length === 0
+      const isPerson = kind === 'composer' || kind === 'bridge' || (kind === 'sdk' && !headless)
+      if (!isPerson && !(headless && mode === 'auto')) return next(e)
       const isRemote = kind === 'bridge'
+      const automatic = mode === 'auto' || (isRemote && remoteMode === 'auto')
 
       // Records the decision and sends the prompt on, noting it once the turn starts.
       const decide = async (value: Routing, text: string, statusLine?: string, logged: Record<string, unknown> = {}, sent = e) => {
@@ -297,7 +301,7 @@ export const register: Register = (on, options) => {
             prompt: e.text,
             current,
             cwd: await $.session.cwd(),
-            mode,
+            style,
             hasImages: (e.attachments ?? []).some(a => a.type === 'image'),
             preferences: [],
             models: allowed,
@@ -321,28 +325,30 @@ export const register: Register = (on, options) => {
               ? 'unreadable reply'
               : reply.reason === 'aborted'
                 ? `timed out after ${duration(timeoutMs)}`
-                : reply.reason
+                : reply.reason === 'api-error'
+                  ? `${reply.error}${reply.status ? `, HTTP ${reply.status}` : ''}`
+                  : reply.reason
         return decide(skipped(`Router unavailable (${failure}).`), `unavailable (${failure}); this session stays on ${now}.`)
       }
       const suggested = rec.family === 'keep' ? `keeping ${now}` : label(rec.family, rec.effort)
 
-      if (options.shadow === true) {
+      if (mode === 'shadow') {
         const would = rec.family === 'keep' ? 'keep the current model' : `pick ${suggested}`
         return decide(kept(`Shadow mode: would ${would}. ${rec.reason}`), `shadow mode, would ${would}; staying on ${now}.${why}`)
       }
 
       const opts = pickerOptions(rec, current)
       // A picker with one choice would only be padded with Yes/No.
-      const askAnyway = options.askWhenClose === true && opts.length > 1
-      if (!askAnyway && isCloseEnough(rec, current)) {
-        const close = rec.family === 'keep' ? 'no reason to switch' : `close enough to its pick, ${suggested}`
-        return decide(kept(rec.reason), `staying on ${now} (${close}).${why}`)
+      const askAnyway = !automatic && options.askIfSame === true && opts.length > 1
+      if (!askAnyway && isSame(rec, current)) {
+        const same = rec.family === 'keep' ? 'no reason to switch' : 'its pick is the current setting'
+        return decide(kept(rec.reason), `staying on ${now} (${same}).${why}`)
       }
 
       let choice: Choice = null
       let answer: string | null = null
       let resolved: Choice | 'unrecognized' | 'failed' = null
-      if (isRemote && remoteMode === 'auto') {
+      if (automatic) {
         choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
       } else {
         const fastNote = rec.family !== 'keep' && rec.family !== 'opus' && (await fastModeOn($)) ? ' Fast mode only applies to Opus.' : ''
@@ -362,21 +368,23 @@ export const register: Register = (on, options) => {
       if (choice === null || isCurrent(choice, current)) {
         const how =
           answer === null
-            ? isRemote && remoteMode === 'auto'
-              ? 'over Remote Control'
+            ? automatic
+              ? 'nothing to apply'
               : 'picker dismissed'
             : resolved === 'unrecognized'
               ? `couldn't tell what "${answer.slice(0, 40)}" meant`
               : resolved === 'failed'
                 ? "couldn't check your answer"
                 : 'you kept it'
-        return decide(kept(rec.reason), `staying on ${now} (${how}; it suggested ${suggested}).${why}`, undefined, { answer })
+        // Under askIfSame the suggestion was to keep it, so there is no other pick to name.
+        const suggestion = isSame(rec, current) ? '' : `; it suggested ${suggested}`
+        return decide(kept(rec.reason), `staying on ${now} (${how}${suggestion}).${why}`, undefined, { answer })
       }
 
       const applied = { family: choice.family, model: LATEST[choice.family].id, effort: choice.effort }
       const picked = label(choice.family, choice.effort)
       const how =
-        answer === null ? 'applied automatically over Remote Control' : picked === suggested ? 'recommended' : `your pick; it suggested ${suggested}`
+        answer === null ? (isRemote && mode !== 'auto' ? 'applied automatically over Remote Control' : 'applied automatically') : picked === suggested ? 'recommended' : `your pick; it suggested ${suggested}`
       return decide(
         { status: 'routed', applied, reason: rec.reason },
         `this session runs on ${picked} (${how}; was ${now}).${why}`,

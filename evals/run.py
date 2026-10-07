@@ -50,7 +50,7 @@ def router_input(probe: dict, defaults: dict) -> str:
             "current": probe.get("current", defaults["current"]),
             "project": "src/example-app",
             "signals": {"promptChars": len(prompt), "hasImages": probe.get("hasImages", defaults["hasImages"])},
-            "mode": probe.get("mode", defaults["mode"]),
+            "style": probe.get("style", defaults["style"]),
             "models": probe.get("models", ["fable", "opus", "sonnet", "haiku"]),
             "preferences": probe.get("preferences", defaults["preferences"]),
         },

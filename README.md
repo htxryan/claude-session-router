@@ -45,14 +45,56 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 
 - **Skip routing for one session:** start the first prompt with `~~`.
 - **See what happened:** `/session-router:explain`, or the line the plugin adds under your first prompt.
-- **Settings** (`/plugin` → session-router): mode `frugal` / `balanced` / `performance`, models to never recommend (e.g. `fable` if you don't have access), router model and effort, and phone (Remote Control) behaviour.
+- **Take over:** picking a model with `/model` ends the switch. Picking an effort with `/effort` ends only the effort part, so the routed model stays. Pressing Esc in either changes nothing.
 
-It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
+It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are routed only in auto mode. In Claude Cowork only the skill is expected to work, not the automatic routing.
+
+## Settings
+
+Set them in `/plugin` → session-router, or in `~/.claude/settings.json`.
+
+- **Mode:**
+  - `default` shows the picker before switching.
+  - `shadow` notes what it would pick, without asking or switching.
+  - `auto` applies the pick without asking, and routes headless runs (`claude -p`) too.
+- **Style:** `frugal`, `balanced` (the default) or `performance`. Styles only break ties between close options: `frugal` favours the cheapest model that will finish the task, `performance` the more capable one.
+- **Models to never recommend:** for example `fable` if you don't have access. You can still type one in the picker.
+- **Router:** the model and effort that read your first prompt, and how long to wait for them (30 seconds by default).
+- **Remote Control:** in default mode, `ask` (the default) shows the picker on your phone, `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted. `skip` also holds in auto mode.
+- **Skip prefix:** `~~` by default. Avoid `!`, which starts shell mode, and `/`, which starts commands.
+- **Ask if same** (default mode only): off by default, so when the pick is the model and effort you're already on, the prompt is sent without asking. Turn it on to see the picker anyway. Any other pick, even one effort level away, always asks.
+
+The same settings in `settings.json`, with the defaults except for `excludeModels`:
+
+```jsonc
+{
+  "pluginConfigs": {
+    "session-router@claude-session-router": {
+      "options": {
+        "mode": "default",                  // default | shadow | auto
+        "style": "balanced",                // frugal | balanced | performance
+        "excludeModels": "fable",           // comma-separated: fable, opus, sonnet, haiku
+        "routerModel": "claude-opus-5-5",
+        "routerEffort": "medium",           // low | medium | high | xhigh | max
+        "timeoutMs": 30000,                 // after this, the prompt goes on the current model
+        "remoteMode": "ask",                // ask | auto | skip
+        "bypassPrefix": "~~",               // avoid ! (shell mode) and / (commands)
+        "askIfSame": false                  // default mode only; true: show the picker even when the pick changes nothing
+      }
+    }
+  }
+}
+```
 
 ## Costs and limits
 
-- **One router call per new session.** Before your first prompt is sent, Opus 5.5 at medium effort reads it. That adds a few seconds (about 5 on average) and uses a little of your plan or API credits. If you type your own answer in the picker instead of choosing an option, a second short call at low effort reads it. Later prompts cost nothing extra.
-- **Fable can cost more.** On some plans, Fable usage is billed to usage credits. If you'd rather never be offered it, add `fable` to the models to never recommend.
+- **One router call per session:** about 5 seconds and a little of your plan or API credits. A typed answer in the picker adds a short second call.
+- **Fable can cost more:** some plans bill it to usage credits. Exclude it in Settings to never be offered it.
+- **Subagents and compaction follow the original model.** A session routed from 1M-context Opus to Haiku (200k) can hit Haiku's limit before compacting.
+- **`/effort` is saved as the original model's default.**
+- **`claude --effort` isn't visible to plugins,** so the picker shows your saved effort as current.
+- **A wrong type in `pluginConfigs`** (e.g. `"30000"` for `timeoutMs`) stops the plugin loading, with the error only in the debug log.
+- **In the picker,** Esc and "Chat about this" keep the current model, and Ctrl+C doesn't close it.
 
 ## Sources
 

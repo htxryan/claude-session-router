@@ -5,7 +5,7 @@
       "model": "claude-opus-5-5",
       "effort": "medium"
     },
-    "mode": "balanced",
+    "style": "balanced",
     "hasImages": false,
     "preferences": []
   },
@@ -282,7 +282,7 @@
     {
       "id": "h-frugal-research",
       "prompt": "Find the three cheapest flights from Houston to Denver next weekend.",
-      "mode": "frugal",
+      "style": "frugal",
       "accept": {
         "haiku": [
           null

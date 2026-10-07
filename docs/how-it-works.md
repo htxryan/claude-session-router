@@ -12,10 +12,12 @@ sequenceDiagram
     You->>CC: First prompt (new session or after /clear)
     CC->>Mod: prompt.submit hook
     Mod->>Mod: A person typed it, no turns yet, nothing routed yet?
-    Mod->>Opus: choose-model skill + the prompt, current model, mode
+    Mod->>Opus: choose-model skill + the prompt, current model, style
     Opus-->>Mod: { model, effort, reason, alternative }
-    alt Already on the pick (same model, within one effort level)
+    alt Already on the pick (same model and effort)
         Mod->>Mod: Keep the current model without asking
+    else Auto mode
+        Mod->>Mod: Apply the pick without asking
     else
         Mod->>You: Picker: Recommended / Alternative / Keep current / Other
         You-->>Mod: Choice (Esc keeps the current model)
@@ -40,19 +42,6 @@ sequenceDiagram
 | [`router/pick.ts`](../router/pick.ts) | Pure logic: the latest model of each family, default efforts, picker labels, parsing the router's JSON, and matching your answer. |
 | [`evals/`](../evals) | Prompts with acceptable picks, and a runner that scores the skill. |
 | [`tests/`](../tests) | Hook tests run with `claude plugin test`. |
-
-## Decisions
-
-- **Only the first prompt.** Routing happens only when the session has no turns yet and nothing has been routed. The session counts as under way once the model has replied, so commands like `/effort` or `/status` and `!` shell commands before your first prompt don't stop it being routed. A prompt typed while the first turn runs, a second prompt, a resumed or forked session (`--continue`, `--resume`, `/resume`, even after `/compact`), notifications and this plugin's own commands are never routed. `/clear` starts over. `/resume` of another conversation ends the switch, and that conversation runs on its own model. If you press Esc while it's routing (or reading an answer you typed), the prompt is cancelled and is routed again when you resend it.
-- **Switched per request, not with `/model`.** Running `/model` from a plugin also saves the choice as your account-wide default. The plugin instead rewrites `model` and `effort` on each main-loop request (`turn.step`). If you pick a model with `/model` (even the one the session started on), the switch ends. If you pick an effort with `/effort`, only the effort part ends and the routed model stays. Opening either and pressing Esc changes nothing, and a request Claude Code retries after a refusal or a failure, or sends to a fallback model, goes as Claude Code sends it. If Claude Code switches the session's model by itself, the switch ends and `/session-router:explain` says so. `/model` still shows the session's original model as current, because the switch happens per request.
-- **An explicit `--model` still routes.** Starting with `claude --model sonnet` shows the picker as usual, with your model offered as "Keep … (current)". Start the first prompt with `~~` to skip routing.
-- **Your current effort** is read the way Claude Code resolves it: `CLAUDE_CODE_EFFORT_LEVEL`, then `modelSettings.<model>.effortLevel`, then a top-level `effortLevel` (which Opus 5.5 and Sonnet 5.5 ignore), then the model's default.
-- **Fast mode** only speeds up Opus. When it's on and the pick is another model, the picker says so.
-- **Fails open.** If the router errors, times out (30 s) or is refused (for example a `routerModel` you can't use), the prompt is sent on the current model and the notice says so.
-- **Skipped** for headless runs (`claude -p`), prompts starting with `~~` (configurable; avoid `!`, which starts shell mode, and `/`, which starts commands), and, if you choose, Remote Control. On the phone the picker shows by default. Setting `remoteMode: auto` applies the pick without asking.
-- **Models to never recommend** (`excludeModels`, e.g. `fable`) are listed as off-limits in the router's input. If the router names one anyway, its allowed runner-up takes its place; if there is none, the current model stays. You can still type an excluded model in the picker.
-- **Modes** only break ties between close options: `frugal` favours the cheapest model that will finish, and `performance` the more capable one.
-- **Where it runs.** Automatic routing needs Claude Code's plugin hooks, and it was tested in the terminal. In Claude Cowork the skill is expected to work through the same plugin format, but automatic routing is untested and probably doesn't run.
 
 ## What the skill recommends
 
@@ -85,15 +74,3 @@ Results on 2026-10-06 (Opus 5.5 at medium as the router):
 | Held out, 20 × 5 | 100% | 100% | 96% |
 
 "Acceptable" means the pick was in the probe's range. Most probes accept several reasonable answers, for example Opus or Fable at certain efforts. The held-out prompts were written after the skill was tuned. They include sessions that start on Haiku, Sonnet or Fable, explicit model requests, a prompt-injection attempt, and excluded models.
-
-## Known limits
-
-- **Subagents keep the session's original model.** Subagents that inherit the main model, including the built-in Explore agent, run on the model the session started with, not the routed one. Subagents with their own `model` setting are unaffected.
-- **`/effort` saves to the original model.** In a routed session, Claude Code saves `/effort` as the default effort for the model the session started with, for example Opus, even though the routed model is what uses it.
-- **A bad value in settings stops the plugin loading.** If `pluginConfigs` in `settings.json` is edited by hand and a field has the wrong type, such as text for `timeoutMs`, Claude Code doesn't load the plugin, and the error only appears in the debug log. Setting options through `/plugin` avoids this.
-- **"Chat about this" in the picker** keeps the current model, the same as Esc.
-- **Typed answers in the picker** that are just a model and an effort ("sonnet", "opus high") are read directly; anything else is read by the router model at low effort ("keep the model but at max", "haiku won't cut it, use sonnet"), which adds a second or two. If it can't tell what you meant, the current model stays and the notice says so. `uv run evals/answers.py` checks 25 tricky phrasings.
-- **An `--effort` flag isn't visible to plugins.** If you start with `claude --effort max`, the picker shows your saved effort as the current one. The flag itself still applies if you keep the current model.
-- **Context size follows the original model.** Claude Code plans compaction for the model the session started with. A long session routed from a 1M-context Opus session to Haiku 4.5 (200k) may reach Haiku's limit before Claude Code compacts.
-- **Ctrl+C doesn't close the picker.** Use Esc.
-- **Type-ahead.** Text you type while the router is working stays in the prompt box. It isn't sent as part of the first prompt.

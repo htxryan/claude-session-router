@@ -1,6 +1,6 @@
 {
   "name": "session-router",
-  "version": "0.4.9",
+  "version": "0.5.0",
   "description": "Routes each new session's first prompt to the right Claude model and effort, explains why, and lets you override before it is sent.",
   "author": {
     "name": "Ryan Henderson"
@@ -11,7 +11,18 @@
   "userConfig": {
     "mode": {
       "type": "string",
-      "title": "Routing mode",
+      "title": "Mode",
+      "description": "default asks before switching; shadow notes the pick without asking or switching; auto applies it without asking, in headless runs (claude -p) too.",
+      "default": "default",
+      "options": [
+        "default",
+        "shadow",
+        "auto"
+      ]
+    },
+    "style": {
+      "type": "string",
+      "title": "Routing style",
       "description": "Tiebreak when two options are close: frugal prefers the cheapest model that will finish, performance the more capable model.",
       "default": "balanced",
       "options": [
@@ -48,7 +59,7 @@
     "remoteMode": {
       "type": "string",
       "title": "Remote Control prompts",
-      "description": "ask shows the picker on the phone too; auto applies the pick without asking; skip leaves phone sessions unrouted.",
+      "description": "In default mode: ask shows the picker on the phone too; auto applies the pick without asking; skip leaves phone sessions unrouted (in auto mode too).",
       "default": "ask",
       "options": [
         "ask",
@@ -56,10 +67,10 @@
         "skip"
       ]
     },
-    "askWhenClose": {
+    "askIfSame": {
       "type": "boolean",
-      "title": "Ask even when the pick is close",
-      "description": "Off: when the pick is the current model and within one effort level, send without asking.",
+      "title": "Ask even when the pick is the current setting",
+      "description": "Default mode only. Off: when the pick is the current model at the current effort, send without asking.",
       "default": false
     },
     "bypassPrefix": {
@@ -73,12 +84,6 @@
       "title": "Router timeout (ms)",
       "description": "After this, the prompt is sent on the current model.",
       "default": 30000
-    },
-    "shadow": {
-      "type": "boolean",
-      "title": "Shadow mode",
-      "description": "Log the pick without asking or switching.",
-      "default": false
     }
   }
 }
