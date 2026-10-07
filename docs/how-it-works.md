@@ -69,6 +69,7 @@ Update the model table in the skill and `LATEST` in `router/pick.ts` when new mo
 ```sh
 claude plugin validate .
 claude plugin test .                                      # 46 tests
+npx -y -p typescript@5.6 tsc -p . --noEmit                # type check; needs the plugin loaded once (--plugin-dir) for its types
 uv run evals/run.py --runs 5                              # 38 prompts
 uv run evals/run.py --runs 5 --probes evals/holdout.json  # 20 held-out prompts
 ```
