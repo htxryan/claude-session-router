@@ -317,6 +317,15 @@ describe('routing a session', () => {
     expect(await routerSays($)).toMatch(/Shadow mode: would pick Sonnet 5\.5 · medium/)
   })
 
+  test('invalid settings fall back to their defaults and are named once', { options: { mode: 'Auto', style: 'cheap', routerEffort: 'x-high' } }, async ($, on) => {
+    const calls = engine(on)
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.asked.length).toBe(0)
+    expect(calls.routerInputs[0]).toContain('"style": "balanced"')
+    const warnings = calls.logs.filter(l => l.includes('invalid settings'))
+    expect(warnings).toEqual(['session-router: ignoring invalid settings: style "cheap" (expected frugal, balanced, performance; using balanced); routerEffort "x-high" (expected low, medium, high, xhigh, max; using medium).'])
+  })
+
   test('remote auto mode applies the pick without asking', { options: { remoteMode: 'auto' } }, async ($, on) => {
     const calls = engine(on)
     await submit($, 'Add a --dry-run flag', 'bridge')

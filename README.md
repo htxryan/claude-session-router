@@ -95,6 +95,19 @@ The same settings in `settings.json`, with the defaults except for `excludeModel
 - **`claude --effort` isn't visible to plugins,** so the picker shows your saved effort as current.
 - **A wrong type in `pluginConfigs`** (e.g. `"30000"` for `timeoutMs`) stops the plugin loading, with the error only in the debug log.
 - **In the picker,** Esc and "Chat about this" keep the current model, and Ctrl+C doesn't close it.
+- **An unknown value for a setting with a fixed list** (e.g. `style: "cheap"`) uses its default, and the first prompt names it.
+
+## What it hooks
+
+The plugin is a mod: TypeScript in [hooks/register.ts](hooks/register.ts) that Claude Code runs on these events. Beyond them it reads your effort settings (`settings.json` and `CLAUDE_CODE_EFFORT_LEVEL`), the session's transcript and its own skill file. The only thing it sends anywhere is the router call to Claude.
+
+- **`prompt.submit`:** on a session's first prompt only, asks the router model for a pick, shows the picker, then sends the prompt on unchanged (minus the skip prefix). Later prompts pass through untouched.
+- **`turn.step`:** sets the model and effort on each main-loop request of a routed session. It changes nothing else in the request, and leaves subagents alone.
+- **`turn.start` and `turn.complete`:** add the routing notice under the first prompt, and note when another model answered (a fallback).
+- **`command.run`:** answers `/session-router:explain`. For `/model` and `/effort` it only notes the newest transcript line, to tell a pick from Esc; the command itself runs unchanged.
+- **`classic.SessionStart`:** reads whether the session was resumed or forked, so it isn't routed. It changes nothing.
+- **`classic.PostModelSwitch`:** reads whether Claude Code switched the model by itself, which ends the switch. It changes nothing.
+- **`session.end`:** clears the plugin's own state for the session.
 
 ## Sources
 
