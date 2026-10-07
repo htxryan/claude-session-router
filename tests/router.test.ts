@@ -126,6 +126,9 @@ describe('pick logic', () => {
     expect(resolveAnswer("don't use opus or fable", opts)).toBe('unrecognized')
     expect(resolveAnswer('opus x-high', opts)).toEqual({ family: 'opus', effort: 'xhigh' })
     expect(resolveAnswer('opus extra high', opts)).toEqual({ family: 'opus', effort: 'xhigh' })
+    const fableMax = parseRec('{"model":"fable","effort":"max","reason":"x"}')!
+    expect(resolveAnswer('no fable with max, too slow', opts, fableMax)).toBe('unrecognized')
+    expect(resolveAnswer('no fable, use max', opts, fableMax)).toBe('unrecognized')
   })
 
   test('a pick that is the current setting is offered as keeping it', () => {
@@ -316,7 +319,9 @@ describe('routing a session', () => {
     await drain({ ...step, effort: 'low' }) // /effort low
     expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' })
     expect(await routerSays($)).toMatch(/the model switch still applies/)
-    await drain({ ...step, model: 'claude-haiku-4-5', effort: 'low' }) // a fallback for one request
+    await drain({ ...step, model: 'claude-haiku-4-5', effort: 'low' }) // a fallback for one request goes as it is
+    expect(seen.at(-1)!.model).toBe('claude-haiku-4-5')
+    await drain({ ...step, effort: 'low' })
     expect(seen.at(-1)!.model).toBe('claude-sonnet-5-5')
     env.model = 'claude-opus-4-8'
     await drain({ ...step, model: 'claude-opus-4-8', effort: 'low' }) // /model
@@ -455,5 +460,12 @@ describe('routing a session', () => {
     const calls = engine(on)
     await Promise.all([submit($, 'Add a --dry-run flag'), submit($, 'Something else', 'bridge')])
     expect(calls.router).toBe(1)
+  })
+
+  test('ask-when-close does not ask when the only choice is the current setting', { options: { askWhenClose: true } }, async ($, on) => {
+    const calls = engine(on, { reply: JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits.', alternative: null }) })
+    await submit($, 'Fix the flaky retry logic')
+    expect(calls.asked.length).toBe(0)
+    expect(await routerSays($)).toMatch(/^Kept the current model/)
   })
 })

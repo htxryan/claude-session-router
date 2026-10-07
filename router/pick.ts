@@ -34,7 +34,7 @@ export const familyOf = (model: string): Family | null =>
   FAMILIES.find(f => model.toLowerCase().includes(f)) ?? null
 
 // The model ID without a context suffix ("[1m]") or a date stamp.
-const baseId = (model: string): string => model.toLowerCase().replace(/\[.*\]$/, '').replace(/-\d{8}$/, '')
+export const baseId = (model: string): string => model.toLowerCase().replace(/\[.*\]$/, '').replace(/-\d{8}$/, '')
 
 // Whether this is the latest model of its family, the one the router switches to.
 export const isLatest = (model: string): boolean => {
@@ -202,12 +202,15 @@ export function options(rec: Rec, current: Current): Option[] {
 // when it names several, the last one counts ("fable is overkill, use opus").
 // A negation drops the models it covers, until the clause ends or a word like
 // "use" follows a dropped model ("don't use opus or fable", "instead of opus
-// use sonnet"). An effort on its own applies to the recommended model.
+// use sonnet"). An effort on its own applies to the recommended model,
+// unless the answer turned that model down.
 const NEGATIONS = new Set(['not', 'no', 'don', 'dont', 'never', 'without', 'instead', 'rather', 'avoid', 'skip', 'except'])
-const RESUMES = new Set(['use', 'with', 'go', 'pick', 'try', 'take', 'prefer', 'want', 'choose'])
+const RESUMES = new Set(['use', 'go', 'pick', 'try', 'take', 'prefer', 'want', 'choose'])
 
-function meantWords(answer: string): string[] {
+// The words that count, and the models the answer turned down.
+function meantWords(answer: string): { out: string[]; refused: string[] } {
   const out: string[] = []
+  const refused: string[] = []
   const text = answer.toLowerCase().replace(/\b(x|extra)[\s-]*high\b/g, 'xhigh')
   for (const clause of text.split(/[,.;:!?()]|\bbut\b/)) {
     let negated = false
@@ -216,10 +219,13 @@ function meantWords(answer: string): string[] {
       if (NEGATIONS.has(w)) negated = true
       else if (negated && dropped && RESUMES.has(w)) negated = dropped = false
       else if (!negated) out.push(w)
-      else if ((FAMILIES as readonly string[]).includes(w)) dropped = true
+      else if ((FAMILIES as readonly string[]).includes(w)) {
+        dropped = true
+        refused.push(w)
+      }
     }
   }
-  return out
+  return { out, refused }
 }
 
 const lastOf = <T extends string>(words: readonly string[], set: readonly T[]): T | null =>
@@ -228,11 +234,11 @@ const lastOf = <T extends string>(words: readonly string[], set: readonly T[]): 
 export function resolveAnswer(answer: string, opts: readonly Option[], rec?: Rec): Choice | 'unrecognized' {
   const exact = opts.find(o => o.label === answer)
   if (exact) return exact.choice
-  const meant = meantWords(answer)
+  const { out: meant, refused } = meantWords(answer)
   const family = lastOf(meant, FAMILIES)
   const effort = lastOf(meant, EFFORTS)
   if (family) return { family, effort: effortFor(family, effort) }
   if (meant.includes('keep') || meant.includes('current')) return null
-  if (effort && rec && rec.family !== 'keep' && rec.family !== 'haiku') return { family: rec.family, effort }
+  if (effort && rec && rec.family !== 'keep' && rec.family !== 'haiku' && !refused.includes(rec.family)) return { family: rec.family, effort }
   return 'unrecognized'
 }
