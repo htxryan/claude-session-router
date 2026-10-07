@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { ANSWER_SYSTEM, allowedFamilies, currentLabel, defaultEffortOf, isCloseEnough, modelName, options, parseAnswer, parseRec, plainAnswer, restrict } from '../router/pick'
+import { ANSWER_SYSTEM, allowedFamilies, currentLabel, defaultEffortOf, isSame, modelName, options, parseAnswer, parseRec, plainAnswer, restrict } from '../router/pick'
 import type { Current } from '../router/pick'
 
 const OPUS_XHIGH: Current = { family: 'opus', model: 'claude-opus-5-5', effort: 'xhigh' }
@@ -89,12 +89,13 @@ describe('pick logic', () => {
     expect(restrict(parseRec('{"model":"opus","reason":"x"}')!, allowedFamilies('fable, opus, sonnet, haiku')).family).toBe('keep')
   })
 
-  test('close enough means same family within one effort level', () => {
+  test('the same means the current model at the current effort', () => {
     const rec = parseRec(SONNET_PICK)!
-    expect(isCloseEnough(rec, OPUS_XHIGH)).toBe(false)
-    expect(isCloseEnough({ ...rec, family: 'opus', effort: 'high' }, OPUS_XHIGH)).toBe(true)
-    expect(isCloseEnough({ ...rec, family: 'opus', effort: 'medium' }, OPUS_XHIGH)).toBe(false)
-    expect(isCloseEnough({ ...rec, family: 'opus', effort: 'high' }, { ...OPUS_XHIGH, effort: null })).toBe(false)
+    expect(isSame(rec, OPUS_XHIGH)).toBe(false)
+    expect(isSame({ ...rec, family: 'keep', effort: null }, OPUS_XHIGH)).toBe(true)
+    expect(isSame({ ...rec, family: 'opus', effort: 'xhigh' }, OPUS_XHIGH)).toBe(true)
+    expect(isSame({ ...rec, family: 'opus', effort: 'high' }, OPUS_XHIGH)).toBe(false)
+    expect(isSame({ ...rec, family: 'opus', effort: 'xhigh' }, { ...OPUS_XHIGH, effort: null })).toBe(false)
   })
 
   test('picker answers map to choices, free text included', () => {
@@ -150,7 +151,7 @@ describe('model names', () => {
     expect(defaultEffortOf('claude-opus-4-7')).toBe('xhigh')
     expect(currentLabel({ family: 'opus', model: 'claude-opus-4-8', effort: 'high' })).toBe('Opus 4.8 · high')
     const rec = parseRec('{"model":"opus","effort":"high","reason":"x"}')!
-    expect(isCloseEnough(rec, { family: 'opus', model: 'claude-opus-4-8', effort: 'high' })).toBe(false)
+    expect(isSame(rec, { family: 'opus', model: 'claude-opus-4-8', effort: 'high' })).toBe(false)
   })
 })
 
@@ -244,11 +245,17 @@ describe('routing a session', () => {
     expect(await routerSays($)).toMatch(/^Kept the current model/)
   })
 
-  test('a close pick sends without asking', async ($, on) => {
+  test('a pick of the current model and effort sends without asking', async ($, on) => {
     const calls = engine(on, { reply: JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits.', confidence: 0.7, alternative: null }) })
     await submit($, 'Design the sync protocol')
     expect(calls.asked.length).toBe(0)
     expect(await routerSays($)).toMatch(/^Kept the current model/)
+  })
+
+  test('a pick one effort level away still asks', async ($, on) => {
+    const calls = engine(on, { reply: JSON.stringify({ model: 'opus', effort: 'xhigh', reason: 'Tricky.', alternative: null }) })
+    await submit($, 'Design the sync protocol')
+    expect(calls.options[0]).toEqual(['Opus 5.5 · xhigh (Recommended)', 'Keep Opus 5.5 · high (current)'])
   })
 
   test('a router failure falls through to the current model', async ($, on) => {
@@ -356,7 +363,7 @@ describe('routing a session', () => {
     expect(seen.at(-1)).toBe('claude-opus-5-5')
   })
 
-  test('ask-when-close asks even when the router would keep the current model', { options: { askWhenClose: true } }, async ($, on) => {
+  test('ask-if-same asks even when the router would keep the current model', { options: { askIfSame: true } }, async ($, on) => {
     const reply = JSON.stringify({ model: 'keep', effort: null, reason: 'Opus at high already fits.', alternative: { model: 'sonnet', effort: 'medium', why: 'faster' } })
     const calls = engine(on, { reply })
     await submit($, 'Fix the pagination bug')
@@ -463,7 +470,7 @@ describe('routing a session', () => {
     expect(calls.router).toBe(1)
   })
 
-  test('ask-when-close does not ask when the only choice is the current setting', { options: { askWhenClose: true } }, async ($, on) => {
+  test('ask-if-same does not ask when the only choice is the current setting', { options: { askIfSame: true } }, async ($, on) => {
     const calls = engine(on, { reply: JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits.', alternative: null }) })
     await submit($, 'Fix the flaky retry logic')
     expect(calls.asked.length).toBe(0)

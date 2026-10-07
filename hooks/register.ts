@@ -11,7 +11,7 @@ import {
   defaultEffortOf,
   familyOf,
   ignoresTopLevelEffort,
-  isCloseEnough,
+  isSame,
   isCurrent,
   label,
   options as pickerOptions,
@@ -333,10 +333,10 @@ export const register: Register = (on, options) => {
 
       const opts = pickerOptions(rec, current)
       // A picker with one choice would only be padded with Yes/No.
-      const askAnyway = options.askWhenClose === true && opts.length > 1
-      if (!askAnyway && isCloseEnough(rec, current)) {
-        const close = rec.family === 'keep' ? 'no reason to switch' : `close enough to its pick, ${suggested}`
-        return decide(kept(rec.reason), `staying on ${now} (${close}).${why}`)
+      const askAnyway = options.askIfSame === true && opts.length > 1
+      if (!askAnyway && isSame(rec, current)) {
+        const same = rec.family === 'keep' ? 'no reason to switch' : 'its pick is the current setting'
+        return decide(kept(rec.reason), `staying on ${now} (${same}).${why}`)
       }
 
       let choice: Choice = null

@@ -14,7 +14,7 @@ sequenceDiagram
     Mod->>Mod: A person typed it, no turns yet, nothing routed yet?
     Mod->>Opus: choose-model skill + the prompt, current model, mode
     Opus-->>Mod: { model, effort, reason, alternative }
-    alt Already on the pick (same model, within one effort level)
+    alt Already on the pick (same model and effort)
         Mod->>Mod: Keep the current model without asking
     else
         Mod->>You: Picker: Recommended / Alternative / Keep current / Other
