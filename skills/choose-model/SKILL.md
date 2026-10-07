@@ -115,10 +115,8 @@ Keep it short. If the task is too vague to judge, say what you'd need to know an
 
 ## Sources
 
-- Models overview and choosing a model: https://platform.claude.com/docs/en/about-claude/models/overview, https://platform.claude.com/docs/en/about-claude/models/choosing-a-model
-- Effort: https://platform.claude.com/docs/en/build-with-claude/effort
-- Cost and intelligence (measured effort and model comparisons): https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence
-- Prompting and calibration notes for Opus 5.5, Sonnet 5.5, Fable 5.1 (platform docs "What's new" and prompting pages)
-- Claude Code model configuration: https://code.claude.com/docs/en/model-config
-- Anthropic announcements of Fable 5.1 (2026-09-01), Opus 5.5 (2026-09-22) and Sonnet 5.5 (2026-09-28), and the Claude Code blog posts on Opus 5.5 costs, Sonnet 5.5, and choosing a model and effort
+- Claude docs: https://platform.claude.com/docs/en/about-claude/models/overview, https://platform.claude.com/docs/en/about-claude/models/choosing-a-model, https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence, https://platform.claude.com/docs/en/build-with-claude/effort
+- Prompting guides: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1, https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5, https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5
+- Claude Code: https://code.claude.com/docs/en/model-config, https://claude.com/blog/claude-model-and-effort-level-in-claude-code, https://claude.dev/blog/spending-your-effort/, https://claude.dev/blog/what-a-task-costs-on-opus-5-5/, https://claude.dev/blog/building-with-claude-sonnet-5-5/, https://claude.com/resources/articles/claude-opus-5-5-built-for-coding-sessions-that-use-more-context
+- Announcements: https://www.anthropic.com/claude-fable-and-mythos-5-1 (2026-09-01), https://www.anthropic.com/claude-opus-5-5 (2026-09-22), https://www.anthropic.com/claude-sonnet-5-5 (2026-09-28), https://www.anthropic.com/news/claude-haiku-4-5
 - Haiku 4.5 is committed only until 2026-10-15 and Haiku 5.5 is announced as coming soon: re-check the Haiku row when it ships.
