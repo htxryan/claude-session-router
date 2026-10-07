@@ -15,9 +15,20 @@
   <video src="https://github.com/user-attachments/assets/903c5b66-5239-4210-baf1-638957a03dc2" width="720" controls muted playsinline></video>
 </div>
 
-Claude Session Router is a Claude Code plugin that picks the model and effort for each new session. When you send the first prompt of a session (or the first after `/clear`), Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku and an effort level. It tells you why, and you confirm or override before the prompt is sent. Later prompts are never routed.
+Claude Session Router is a Claude Code plugin that picks the model and effort for each new session.
 
-The recommendations come from [one skill](skills/choose-model/SKILL.md) that condenses what Anthropic has published on choosing a model and effort level, current as of October 2026: the model docs, launch announcements and Claude Code guidance listed under [Sources](#sources). Where it can, the skill quotes Anthropic directly. You can also run it yourself: `/session-router:choose-model <task>`. This is an independent plugin, not an Anthropic product.
+1. You send the first prompt of a session, or the first after `/clear`.
+2. Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku, plus an effort level.
+3. It tells you why. You confirm or override before the prompt is sent.
+
+Later prompts in the session are never routed.
+
+**Where the recommendations come from:** [one skill](skills/choose-model/SKILL.md) that condenses what Anthropic has published on choosing a model and effort level, current as of October 2026.
+
+- It draws on the model docs, launch announcements and Claude Code guidance listed under [Sources](#sources), and quotes Anthropic directly where it can.
+- You can run it yourself: `/session-router:choose-model <task>`.
+
+This is an independent plugin, not an Anthropic product.
 
 ## Install
 
