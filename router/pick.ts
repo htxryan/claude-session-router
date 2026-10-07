@@ -113,17 +113,22 @@ export function routerInput(args: {
   )
 }
 
-// Reads the router's reply; null when it is not the contract.
-export function parseRec(text: string): Rec | null {
+// The JSON object in a model's reply, fenced or not.
+function readJson(text: string): Record<string, unknown> | null {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start < 0 || end <= start) return null
-  let raw: Record<string, unknown>
   try {
-    raw = JSON.parse(text.slice(start, end + 1))
+    return JSON.parse(text.slice(start, end + 1))
   } catch {
     return null
   }
+}
+
+// Reads the router's reply; null when it is not the contract.
+export function parseRec(text: string): Rec | null {
+  const raw = readJson(text)
+  if (!raw) return null
   const reason = typeof raw.reason === 'string' ? raw.reason.trim() : ''
   if (!reason) return null
   const family = String(raw.model).toLowerCase() === 'keep' ? 'keep' : asFamily(raw.model)
@@ -221,18 +226,26 @@ export function answerInput(answer: string, rec: Rec, current: Current): string 
   })
 }
 
+// A typed answer that is only a model and an effort ("sonnet", "opus high",
+// "low"), read without a call; undefined for anything else. Naming the
+// current model keeps its effort; an effort alone applies to the
+// recommended model.
+export function plainAnswer(answer: string, rec: Rec, current: Current): Choice | undefined {
+  const words = answer.toLowerCase().trim().split(/\s+/)
+  const family = words.length <= 2 ? (FAMILIES.find(f => words[0] === f) ?? null) : null
+  const effort = asEffort(family ? (words[1] ?? '') : words.length === 1 ? words[0] : '')
+  if (family && (words.length === 1 || effort)) return { family, effort: effortFor(family, effort ?? inheritedEffort(family, current)) }
+  if (!family && effort && rec.family !== 'keep' && rec.family !== 'haiku') return { family: rec.family, effort }
+  return undefined
+}
+
+const inheritedEffort = (family: Family, current: Current): Effort | null => (family === current.family ? current.effort : null)
+
 // Reads the router model's reading of a typed answer; 'unrecognized' when it
 // couldn't tell or the reply isn't the contract.
 export function parseAnswer(text: string, current: Current): Choice | 'unrecognized' {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start < 0 || end <= start) return 'unrecognized'
-  let raw: Record<string, unknown>
-  try {
-    raw = JSON.parse(text.slice(start, end + 1))
-  } catch {
-    return 'unrecognized'
-  }
+  const raw = readJson(text)
+  if (!raw) return 'unrecognized'
   const effort = asEffort(raw.effort)
   if (String(raw.model).toLowerCase() === 'keep') {
     // "Keep the model, but at high": the current model at that effort.
@@ -240,5 +253,5 @@ export function parseAnswer(text: string, current: Current): Choice | 'unrecogni
     return effort && family && family !== 'haiku' && isLatest(current.model) ? { family, effort } : null
   }
   const family = asFamily(raw.model)
-  return family ? { family, effort: effortFor(family, effort) } : 'unrecognized'
+  return family ? { family, effort: effortFor(family, effort ?? inheritedEffort(family, current)) } : 'unrecognized'
 }

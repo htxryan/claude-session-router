@@ -17,6 +17,7 @@ import {
   options as pickerOptions,
   parseRec,
   parseAnswer,
+  plainAnswer,
   answerInput,
   ANSWER_SYSTEM,
   restrict,
@@ -146,12 +147,12 @@ async function readAnswer(
   current: Current,
   model: string,
   signal: AbortSignal,
-): Promise<Choice | 'unrecognized'> {
+): Promise<Choice | 'unrecognized' | 'failed'> {
   $.ui.status('reading your answer…')
   const reply = await $.model
     .complete({ model, system: ANSWER_SYSTEM, prompt: answerInput(answer, rec, current), effort: 'low', maxTokens: 200, timeoutMs: 15000 }, { signal })
     .catch(() => null)
-  return reply?.isAnswered ? parseAnswer(reply.text, current) : 'unrecognized'
+  return reply?.isAnswered ? parseAnswer(reply.text, current) : 'failed'
 }
 
 const sameModel = (a: string, b: string) => baseId(a) === baseId(b)
@@ -250,6 +251,13 @@ export const register: Register = (on, options) => {
 
       // Records the decision and sends the prompt on, noting it once the turn starts.
       const decide = async (value: Routing, text: string, statusLine?: string, logged: Record<string, unknown> = {}, sent = e) => {
+        // Esc while routing (or while reading a typed answer) cancels the
+        // prompt; route it again when it's resent.
+        if (next.signal.aborted) {
+          $.ui.status(undefined)
+          cancelled = true
+          return next(sent)
+        }
         // Another turn (a prompt from another surface, a notification) started
         // the session while this prompt was being routed: too late to switch.
         const late = (await read($, routing)) !== null
@@ -300,12 +308,6 @@ export const register: Register = (on, options) => {
         { signal: next.signal },
       )
         .catch((err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 120))
-      // Esc while routing cancels the prompt; route it again when it's resent.
-      if (next.signal.aborted) {
-        $.ui.status(undefined)
-        cancelled = true
-        return next(e)
-      }
       const parsed = typeof reply !== 'string' && reply.isAnswered ? parseRec(reply.text) : null
       const rec = parsed && restrict(parsed, allowed)
       const why = rec ? ` Why: ${rec.reason}` : ''
@@ -338,7 +340,7 @@ export const register: Register = (on, options) => {
 
       let choice: Choice = null
       let answer: string | null = null
-      let unread = false // a typed answer the router model couldn't read
+      let resolved: Choice | 'unrecognized' | 'failed' = null
       if (isRemote && remoteMode === 'auto') {
         choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
       } else {
@@ -348,9 +350,10 @@ export const register: Register = (on, options) => {
           answer = await $.ui.ask(`${rec.reason}${fastNote} ${question}`, { header: 'Model', options: opts.map(o => o.label) })
           // One of the options, or an answer the person typed.
           const option = opts.find(o => o.label === answer)
-          const resolved = option ? option.choice : await readAnswer($, answer, rec, current, routerModel, next.signal)
-          if (resolved === 'unrecognized') unread = true
-          else choice = resolved
+          resolved = option
+            ? option.choice
+            : (plainAnswer(answer, rec, current) ?? (await readAnswer($, answer, rec, current, routerModel, next.signal)))
+          if (resolved !== 'unrecognized' && resolved !== 'failed') choice = resolved
         } catch {
           // Esc, or the surface couldn't show the picker: keep the current model.
         }
@@ -362,9 +365,11 @@ export const register: Register = (on, options) => {
             ? isRemote && remoteMode === 'auto'
               ? 'over Remote Control'
               : 'picker dismissed'
-            : unread
-              ? `couldn't read "${answer.slice(0, 40)}"`
-              : 'you kept it'
+            : resolved === 'unrecognized'
+              ? `couldn't tell what "${answer.slice(0, 40)}" meant`
+              : resolved === 'failed'
+                ? "couldn't check your answer"
+                : 'you kept it'
         return decide(kept(rec.reason), `staying on ${now} (${how}; it suggested ${suggested}).${why}`, undefined, { answer })
       }
 
