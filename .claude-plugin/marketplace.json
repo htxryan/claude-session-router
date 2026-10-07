@@ -4,7 +4,7 @@
     "name": "Ryan Henderson"
   },
   "metadata": {
-    "description": "session-router: picks the Claude model and effort for each new session."
+    "description": "Claude Session Router: picks the Claude model and effort for each new session."
   },
   "plugins": [
     {

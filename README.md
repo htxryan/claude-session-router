@@ -1,18 +1,17 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="session-router: the right Claude model and effort for each session" width="100%">
-  </picture>
+  <img src="assets/logo.svg" width="88" height="88" alt="Claude Session Router logo">
 </p>
-
+<h1 align="center">Claude Session Router</h1>
+<p align="center"><strong>The right Claude model and effort for each session.</strong></p>
 <p align="center">
-  <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-7c3aed">
-  <img alt="Claude Code 2.1.289 or later" src="https://img.shields.io/badge/requires-2.1.289%2B-3b82f6">
-  <img alt="Evals: 100% acceptable picks" src="https://img.shields.io/badge/evals-100%25%20acceptable-14b8a6">
-  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-f59e0b">
+  <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6e7781?style=flat-square&labelColor=30363d">
+  <img alt="Requires Claude Code 2.1.289 or later" src="https://img.shields.io/badge/requires-2.1.289%2B-6e7781?style=flat-square&labelColor=30363d">
+  <img alt="Evals: 100% acceptable picks" src="https://img.shields.io/badge/evals-100%25%20acceptable-6e7781?style=flat-square&labelColor=30363d">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e7781?style=flat-square&labelColor=30363d">
 </p>
+<p align="center"><a href="#install">Install</a> · <a href="docs/how-it-works.md">How it works</a> · <a href="#sources">Sources</a></p>
 
-A Claude Code plugin that picks the model and effort for each new session. When you send the first prompt of a session (or the first after `/clear`), Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku and an effort level. It tells you why, and you confirm or override before the prompt is sent. Later prompts are never routed.
+Claude Session Router is a Claude Code plugin that picks the model and effort for each new session. When you send the first prompt of a session (or the first after `/clear`), Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku and an effort level. It tells you why, and you confirm or override before the prompt is sent. Later prompts are never routed.
 
 The recommendations come from [one skill](skills/choose-model/SKILL.md) that condenses what Anthropic has published on choosing a model and effort level, current as of October 2026: the model docs, launch announcements and Claude Code guidance listed under [Sources](#sources). Where it can, the skill quotes Anthropic directly. You can also run it yourself: `/session-router:choose-model <task>`. This is an independent plugin, not an Anthropic product.
 

@@ -7,7 +7,7 @@ sequenceDiagram
     autonumber
     actor You
     participant CC as Claude Code
-    participant Mod as session-router
+    participant Mod as Claude Session Router
     participant Opus as Opus 5.5 (router)
     You->>CC: First prompt (new session or after /clear)
     CC->>Mod: prompt.submit hook
