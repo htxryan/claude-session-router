@@ -57,7 +57,6 @@ function engine(on: On, env: Env = {}) {
     const answer = env.answer ?? q.options[0]!.label
     return { result: { questions: e.questions, answers: { [q.question]: answer } } } as never
   })
-  on('command.register', (_$, e) => value({ command: e.name }))
   on('ui.status', () => value(undefined))
   on('ui.toast', () => value(undefined))
   on('ui.log', (_$, e) => {
@@ -73,9 +72,9 @@ function engine(on: On, env: Env = {}) {
 const submit = ($: any, text: string, origin = 'composer') =>
   $.prompt.submit({ text, wait: false, origin: { kind: origin } })
 
-// What /router reports: the plugin's own read of its routing state.
+// What /session-router:router reports: the plugin's own read of its routing state.
 const routerSays = async ($: any): Promise<string> =>
-  (await $.command.run({ command: 'router', args: '', origin: { kind: 'composer' }, presentation: {} })).text ?? ''
+  (await $.command.run({ command: 'session-router:router', args: '', origin: { kind: 'composer' }, presentation: {} })).text ?? ''
 
 describe('pick logic', () => {
   test('reads the router contract and rejects anything else', () => {

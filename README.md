@@ -29,7 +29,7 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 ## Use
 
 - **Skip routing for one session:** start the first prompt with `~~`.
-- **See what happened:** `/router`, or the line the plugin adds under your first prompt.
+- **See what happened:** `/session-router:router`, or the line the plugin adds under your first prompt.
 - **Settings** (`/plugin` → session-router): mode `frugal` / `balanced` / `performance`, models to never recommend (e.g. `fable` if you don't have access), router model and effort, and phone (Remote Control) behaviour.
 
 It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
