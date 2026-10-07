@@ -199,60 +199,46 @@ export function options(rec: Rec, current: Current): Option[] {
   return keeps ? [{ label: `${keep} (Recommended)`, choice: null }, ...out] : [...out, { label: `${keep} (current)`, choice: null }]
 }
 
-// Maps the picker's answer to a choice; null keeps the current model.
-// Free text under "Other" is read for a family and an effort ("fable max");
-// when it names several, the last one counts ("fable is overkill, use opus").
-// A negation drops the models it covers, until the clause ends or a word like
-// "use" follows a dropped model ("don't use opus or fable", "instead of opus
-// use sonnet"). An effort on its own applies to the recommended model,
-// unless the answer turned that model down.
-const NEGATIONS = new Set(['not', 'no', 'nor', 'don', 'dont', 'doesn', 'isn', 'aren', 'won', 'wouldn', 'shouldn', 'never', 'without', 'instead', 'rather', 'avoid', 'skip', 'except'])
-// Negations that follow the model they turn down ("opus isn't needed").
-const TRAILING = new Set(['isn', 'aren', 'doesn', 'won', 'wouldn', 'shouldn'])
-const RESUMES = new Set(['use', 'with', 'go', 'pick', 'try', 'take', 'prefer', 'want', 'choose'])
+// Instructions for reading an answer typed into the picker.
+export const ANSWER_SYSTEM = `A person was asked which Claude model a Claude Code session should run on, and typed their own answer instead of picking an option. Decide what they chose.
 
-const isFamily = (w: string) => (FAMILIES as readonly string[]).includes(w)
+The input is JSON: their answer, the recommended model and effort, and the session's current model and effort.
 
-// The words that count, and the models the answer turned down.
-function meantWords(answer: string): { out: string[]; refused: string[] } {
-  const out: string[] = []
-  const refused: string[] = []
-  const text = answer.toLowerCase().replace(/\b(x|extra)[\s-]*high\b/g, 'xhigh')
-  for (const clause of text.split(/[,.;:!?()]|\bbut\b/)) {
-    let negated = false
-    let dropped = false
-    let previous = ''
-    for (const w of clause.split(/[^a-z]+/).filter(Boolean)) {
-      const after = previous
-      previous = w
-      if (TRAILING.has(w) && isFamily(after) && out.at(-1) === after) {
-        refused.push(out.pop()!)
-        continue
-      }
-      if (NEGATIONS.has(w)) negated = true
-      else if (negated && dropped && RESUMES.has(w)) negated = dropped = false
-      else if (!negated) out.push(w)
-      else if (isFamily(w)) {
-        dropped = true
-        refused.push(w)
-      }
-    }
-  }
-  return { out, refused }
+Reply with one JSON object and nothing else: {"model": "keep" | "fable" | "opus" | "sonnet" | "haiku" | "unclear", "effort": "low" | "medium" | "high" | "xhigh" | "max" | null}
+
+- "keep": stay on the current model at its current effort, changing nothing (e.g. "keep it", "no change", "current is fine", or naming the current model without a new effort).
+- Otherwise the model they ask for, and always an effort for fable, opus and sonnet: the one they ask for ("maximum", "lowest" or "bump it up" map to a level); if they name none, the current effort for the current model, the recommended effort for the recommended model, and otherwise "medium" for opus and sonnet or "high" for fable. Never an effort they turned down.
+- An effort alone applies to the recommended model; "keep the model but at high" means the current model at that effort.
+- Haiku has no effort: always null.
+- Models or efforts they turn down ("not opus", "max isn't needed") are not their choice.
+- "unclear" when you can't tell, when they ask for something other than these four latest models (an older version such as "opus 4.8"), or when the answer isn't about choosing a model.`
+
+export function answerInput(answer: string, rec: Rec, current: Current): string {
+  return JSON.stringify({
+    answer: answer.slice(0, 500),
+    recommended: rec.family === 'keep' ? 'keep the current model' : label(rec.family, rec.effort),
+    current: currentLabel(current),
+  })
 }
 
-const lastOf = <T extends string>(words: readonly string[], set: readonly T[]): T | null =>
-  (words.findLast(w => (set as readonly string[]).includes(w)) as T | undefined) ?? null
-
-// Naming the current model without an effort ("keep opus") keeps its effort.
-export function resolveAnswer(answer: string, opts: readonly Option[], rec?: Rec, current?: Current): Choice | 'unrecognized' {
-  const exact = opts.find(o => o.label === answer)
-  if (exact) return exact.choice
-  const { out: meant, refused } = meantWords(answer)
-  const family = lastOf(meant, FAMILIES)
-  const effort = lastOf(meant, EFFORTS)
-  if (family) return { family, effort: effortFor(family, effort ?? (family === current?.family ? current.effort : null)) }
-  if (meant.includes('keep') || meant.includes('current')) return null
-  if (effort && rec && rec.family !== 'keep' && rec.family !== 'haiku' && !refused.includes(rec.family)) return { family: rec.family, effort }
-  return 'unrecognized'
+// Reads the router model's reading of a typed answer; 'unrecognized' when it
+// couldn't tell or the reply isn't the contract.
+export function parseAnswer(text: string, current: Current): Choice | 'unrecognized' {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start < 0 || end <= start) return 'unrecognized'
+  let raw: Record<string, unknown>
+  try {
+    raw = JSON.parse(text.slice(start, end + 1))
+  } catch {
+    return 'unrecognized'
+  }
+  const effort = asEffort(raw.effort)
+  if (String(raw.model).toLowerCase() === 'keep') {
+    // "Keep the model, but at high": the current model at that effort.
+    const family = current.family
+    return effort && family && family !== 'haiku' && isLatest(current.model) ? { family, effort } : null
+  }
+  const family = asFamily(raw.model)
+  return family ? { family, effort: effortFor(family, effort) } : 'unrecognized'
 }

@@ -37,7 +37,7 @@ It only switches the model for this session. It never runs `/model`, so your sav
 
 ## Costs and limits
 
-- **One router call per new session.** Before your first prompt is sent, Opus 5.5 at medium effort reads it. That adds a few seconds (about 5 on average) and uses a little of your plan or API credits. Later prompts cost nothing extra.
+- **One router call per new session.** Before your first prompt is sent, Opus 5.5 at medium effort reads it. That adds a few seconds (about 5 on average) and uses a little of your plan or API credits. If you type your own answer in the picker instead of choosing an option, a second short call at low effort reads it. Later prompts cost nothing extra.
 - **Fable can cost more.** On some plans, Fable usage is billed to usage credits. If you'd rather never be offered it, add `fable` to the models to never recommend.
 - **Bedrock, Vertex and Foundry.** The plugin asks for the latest model IDs directly. Model availability and Claude Code's model aliases differ by provider, so check that your provider serves these models.
 - **Where it's been tested:** the Claude Code terminal on macOS. The desktop app and Remote Control (phone) should work but haven't been tested. Claude Cowork is expected to run only the skill.

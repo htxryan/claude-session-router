@@ -68,7 +68,7 @@ Update the model table in the skill and `LATEST` in `router/pick.ts` when new mo
 
 ```sh
 claude plugin validate .
-claude plugin test .                                      # 42 tests
+claude plugin test .                                      # 45 tests
 uv run evals/run.py --runs 5                              # 38 prompts
 uv run evals/run.py --runs 5 --probes evals/holdout.json  # 20 held-out prompts
 ```
@@ -90,7 +90,7 @@ Results on 2026-10-06 (Opus 5.5 at medium as the router):
 - **`/effort` saves to the original model.** In a routed session, Claude Code saves `/effort` as the default effort for the model the session started with, for example Opus, even though the routed model is what uses it.
 - **A bad value in settings stops the plugin loading.** If `pluginConfigs` in `settings.json` is edited by hand and a field has the wrong type, such as text for `timeoutMs`, Claude Code doesn't load the plugin, and the error only appears in the debug log. Setting options through `/plugin` avoids this.
 - **"Chat about this" in the picker** keeps the current model, the same as Esc.
-- **Typed answers in the picker** are read for a model and an effort ("sonnet low", "not opus, use sonnet", or just "low" for the recommended model at low effort). When an answer names several models, the last one counts ("fable is overkill, use opus"). Anything else keeps the current model.
+- **Typed answers in the picker** are read by the router model at low effort ("keep the model but at max", "haiku won't cut it, use sonnet"), which adds a second or two. If it can't tell what you meant, the current model stays and the notice says so. `uv run evals/answers.py` checks 25 tricky phrasings.
 - **An `--effort` flag isn't visible to plugins.** If you start with `claude --effort max`, the picker shows your saved effort as the current one. The flag itself still applies if you keep the current model.
 - **Context size follows the original model.** Claude Code plans compaction for the model the session started with. A long session routed from a 1M-context Opus session to Haiku 4.5 (200k) may reach Haiku's limit before Claude Code compacts.
 - **Ctrl+C doesn't close the picker.** Use Esc.

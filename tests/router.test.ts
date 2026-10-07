@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { allowedFamilies, currentLabel, defaultEffortOf, isCloseEnough, modelName, options, parseRec, resolveAnswer, restrict } from '../router/pick'
+import { ANSWER_SYSTEM, allowedFamilies, currentLabel, defaultEffortOf, isCloseEnough, modelName, options, parseAnswer, parseRec, restrict } from '../router/pick'
 import type { Current } from '../router/pick'
 
 const OPUS_XHIGH: Current = { family: 'opus', model: 'claude-opus-5-5', effort: 'xhigh' }
@@ -14,12 +14,12 @@ const SONNET_PICK = JSON.stringify({
   alternative: { model: 'opus', effort: 'low', why: 'stronger model, similar cost' },
 })
 
-type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean; rows?: string[] }
+type Env = { reading?: string; reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean; rows?: string[] }
 
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
 function engine(on: On, env: Env = {}) {
-  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[], routerInputs: [] as string[], logs: [] as string[] }
+  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[], routerInputs: [] as string[], logs: [] as string[], readings: [] as string[] }
   mock.store(on)
   mock.clock(on)
   const value = <T>(v: T) => ({ value: v }) as never
@@ -38,6 +38,11 @@ function engine(on: On, env: Env = {}) {
     return value('---\nname: choose-model\n---\nRouting instructions.')
   })
   on('model.complete', (_$, e) => {
+    if ((e as { system?: unknown }).system === ANSWER_SYSTEM) {
+      calls.readings.push(String((e as { prompt?: unknown }).prompt))
+      if (env.reading === undefined) throw new Error('unavailable')
+      return value({ isAnswered: true, text: env.reading, usage: USAGE })
+    }
     calls.router += 1
     calls.routerInputs.push(String((e as { prompt?: unknown }).prompt))
     if (env.reply === 'reject') throw new Error('model claude-nope is not available')
@@ -105,35 +110,15 @@ describe('pick logic', () => {
       'Opus 5.5 · medium — safer',
       'Keep Opus 5.5 · xhigh (current)',
     ])
-    expect(resolveAnswer(opts[0]!.label, opts)).toEqual({ family: 'sonnet', effort: 'medium' })
-    expect(resolveAnswer(opts[2]!.label, opts)).toBe(null)
-    expect(resolveAnswer('fable max', opts)).toEqual({ family: 'fable', effort: 'max' })
-    expect(resolveAnswer('Haiku please', opts)).toEqual({ family: 'haiku', effort: null })
-    expect(resolveAnswer('sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
-    expect(resolveAnswer('whatever', opts)).toBe('unrecognized')
-    expect(resolveAnswer('not opus, use sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
-    expect(resolveAnswer("don't use opus, haiku is fine", opts)).toEqual({ family: 'haiku', effort: null })
-    expect(resolveAnswer('not haiku, opus high', opts)).toEqual({ family: 'opus', effort: 'high' })
-    expect(resolveAnswer('opus instead of sonnet', opts)).toEqual({ family: 'opus', effort: 'medium' })
-    expect(resolveAnswer("don't keep it, use haiku", opts)).toEqual({ family: 'haiku', effort: null })
-    expect(resolveAnswer("don't switch, keep it", opts)).toBe(null)
-    expect(resolveAnswer('low', opts, parseRec(SONNET_PICK)!)).toEqual({ family: 'sonnet', effort: 'low' })
-    expect(resolveAnswer('not sure', opts)).toBe('unrecognized')
-    expect(resolveAnswer('fable is overkill, use opus', opts)).toEqual({ family: 'opus', effort: 'medium' })
-    expect(resolveAnswer('sonnet? no, haiku', opts)).toEqual({ family: 'haiku', effort: null })
-    expect(resolveAnswer('instead of opus use sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
-    expect(resolveAnswer('rather than opus, go with sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
-    expect(resolveAnswer("don't use opus or fable", opts)).toBe('unrecognized')
-    expect(resolveAnswer('opus x-high', opts)).toEqual({ family: 'opus', effort: 'xhigh' })
-    expect(resolveAnswer('opus extra high', opts)).toEqual({ family: 'opus', effort: 'xhigh' })
-    const fableMax = parseRec('{"model":"fable","effort":"max","reason":"x"}')!
-    expect(resolveAnswer('no fable with max, too slow', opts, fableMax)).toBe('unrecognized')
-    expect(resolveAnswer('no fable, use max', opts, fableMax)).toBe('unrecognized')
-    expect(resolveAnswer('instead of fable with opus', opts, fableMax)).toEqual({ family: 'opus', effort: 'medium' })
-    expect(resolveAnswer('keep opus', opts, undefined, OPUS_XHIGH)).toEqual({ family: 'opus', effort: 'xhigh' })
-    expect(resolveAnswer("sonnet, opus isn't needed", opts)).toEqual({ family: 'sonnet', effort: 'medium' })
-    expect(resolveAnswer("haiku won't cut it so use sonnet", opts)).toEqual({ family: 'sonnet', effort: 'medium' })
-    expect(resolveAnswer("haiku isn't enough use sonnet high", opts)).toEqual({ family: 'sonnet', effort: 'high' })
+    const read = (model: string, effort: string | null = null) => parseAnswer(JSON.stringify({ model, effort }), OPUS_XHIGH)
+    expect(read('keep')).toBe(null)
+    expect(read('fable', 'max')).toEqual({ family: 'fable', effort: 'max' })
+    expect(read('haiku', 'high')).toEqual({ family: 'haiku', effort: null })
+    expect(read('sonnet')).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(read('keep', 'high')).toEqual({ family: 'opus', effort: 'high' })
+    expect(read('Opus', 'x-high')).toEqual({ family: 'opus', effort: 'xhigh' })
+    expect(read('unclear')).toBe('unrecognized')
+    expect(parseAnswer('not json', OPUS_XHIGH)).toBe('unrecognized')
   })
 
   test('a pick that is the current setting is offered as keeping it', () => {
@@ -549,5 +534,33 @@ describe('routing a session', () => {
     engine(on)
     const sent = await submit($, '~~ do it', 'bridge')
     expect(sent.text).toBe('do it')
+  })
+
+  test('an answer the person typed is read by the router model', async ($, on) => {
+    const calls = engine(on, { answer: 'not opus, sonnet but low', reading: '{"model":"sonnet","effort":"low"}' })
+    const seen: string[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push(`${e.model}:${String(e.effort)}`)
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null } as never
+    })
+    await submit($, 'Add a --dry-run flag')
+    expect(JSON.parse(calls.readings[0]!).answer).toBe('not opus, sonnet but low')
+    const it = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 } as never)
+    for await (const _ of it) {}
+    expect(seen).toEqual(['claude-sonnet-5-5:low'])
+  })
+
+  test('a typed answer that cannot be read keeps the current model', async ($, on) => {
+    const calls = engine(on, { answer: 'hmm' })
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.readings.length).toBe(1)
+    expect(await routerSays($)).toMatch(/^Kept the current model/)
+  })
+
+  test('picking an option is not sent to the router model', async ($, on) => {
+    const calls = engine(on, { answer: 'Keep Opus 5.5 · high (current)' })
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.readings.length).toBe(0)
+    expect(await routerSays($)).toMatch(/^Kept the current model/)
   })
 })
