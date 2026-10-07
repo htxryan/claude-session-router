@@ -68,16 +68,16 @@ Update the model table in the skill and `LATEST` in `router/pick.ts` when new mo
 claude plugin validate .
 claude plugin test .                                      # 18 hook tests
 uv run evals/run.py --runs 5                              # 38 prompts
-uv run evals/run.py --runs 5 --probes evals/holdout.json  # 18 held-out prompts
+uv run evals/run.py --runs 5 --probes evals/holdout.json  # 20 held-out prompts
 ```
 
 The evals call the router the way the plugin does, through `claude -p` on your own login, so they use your plan or credits. A run of 38 prompts × 5 takes about 2 minutes with 8 jobs (`--jobs 8`).
 
-Results on 2026-10-06 (Opus 5.5 at medium as the router):
+Results on 2026-10-07 (Opus 5.5 at medium as the router):
 
 | Set | Valid JSON | Acceptable pick | Same pick on repeat runs |
 |---|---|---|---|
 | Main, 38 × 5 | 100% | 100% | 98% |
-| Held out, 18 × 5 | 100% | 100% | 98% |
+| Held out, 20 × 5 | 100% | 100% | 96% |
 
-"Acceptable" means the pick was in the probe's range. Most probes accept several reasonable answers, for example Opus or Fable at certain efforts. The held-out prompts were written after the skill was tuned. They include sessions that start on Haiku, Sonnet or Fable, explicit model requests, and a prompt-injection attempt.
+"Acceptable" means the pick was in the probe's range. Most probes accept several reasonable answers, for example Opus or Fable at certain efforts. The held-out prompts were written after the skill was tuned. They include sessions that start on Haiku, Sonnet or Fable, explicit model requests, a prompt-injection attempt, and excluded models.
