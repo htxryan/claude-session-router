@@ -62,7 +62,7 @@ Set them in `/plugin` → session-router, or in `~/.claude/settings.json`.
 - **Router:** the model and effort that read your first prompt, and how long to wait for them (30 seconds by default).
 - **Remote Control:** in default mode, `ask` (the default) shows the picker on your phone, `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted. `skip` also holds in auto mode.
 - **Skip prefix:** `~~` by default. Avoid `!`, which starts shell mode, and `/`, which starts commands.
-- **Ask if same:** off by default, so when the pick is the model and effort you're already on, the prompt is sent without asking. Turn it on to see the picker anyway. Any other pick, even one effort level away, always asks.
+- **Ask if same** (default mode only): off by default, so when the pick is the model and effort you're already on, the prompt is sent without asking. Turn it on to see the picker anyway. Any other pick, even one effort level away, always asks.
 
 The same settings in `settings.json`, with the defaults except for `excludeModels`:
 
@@ -79,7 +79,7 @@ The same settings in `settings.json`, with the defaults except for `excludeModel
         "timeoutMs": 30000,                 // after this, the prompt goes on the current model
         "remoteMode": "ask",                // ask | auto | skip
         "bypassPrefix": "~~",               // avoid ! (shell mode) and / (commands)
-        "askIfSame": false                  // true: show the picker even when the pick changes nothing
+        "askIfSame": false                  // default mode only; true: show the picker even when the pick changes nothing
       }
     }
   }

@@ -70,7 +70,7 @@
     "askIfSame": {
       "type": "boolean",
       "title": "Ask even when the pick is the current setting",
-      "description": "Off: when the pick is the current model at the current effort, send without asking.",
+      "description": "Default mode only. Off: when the pick is the current model at the current effort, send without asking.",
       "default": false
     },
     "bypassPrefix": {
