@@ -72,9 +72,9 @@ function engine(on: On, env: Env = {}) {
 const submit = ($: any, text: string, origin = 'composer') =>
   $.prompt.submit({ text, wait: false, origin: { kind: origin } })
 
-// What /session-router:router reports: the plugin's own read of its routing state.
+// What /session-router:explain reports: the plugin's own read of its routing state.
 const routerSays = async ($: any): Promise<string> =>
-  (await $.command.run({ command: 'session-router:router', args: '', origin: { kind: 'composer' }, presentation: {} })).text ?? ''
+  (await $.command.run({ command: 'session-router:explain', args: '', origin: { kind: 'composer' }, presentation: {} })).text ?? ''
 
 describe('pick logic', () => {
   test('reads the router contract and rejects anything else', () => {
