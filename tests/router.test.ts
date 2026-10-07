@@ -110,15 +110,17 @@ describe('pick logic', () => {
       'Opus 5.5 · medium — safer',
       'Keep Opus 5.5 · xhigh (current)',
     ])
-    const read = (model: string, effort: string | null = null) => parseAnswer(JSON.stringify({ model, effort }), OPUS_XHIGH)
+    const sonnetHigh = parseRec('{"model":"sonnet","effort":"high","reason":"x"}')!
+    const read = (model: string, effort: string | null = null) => parseAnswer(JSON.stringify({ model, effort }), sonnetHigh, OPUS_XHIGH)
     expect(read('keep')).toBe(null)
     expect(read('fable', 'max')).toEqual({ family: 'fable', effort: 'max' })
     expect(read('haiku', 'high')).toEqual({ family: 'haiku', effort: null })
-    expect(read('sonnet')).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(read('sonnet')).toEqual({ family: 'sonnet', effort: 'high' }) // the recommended effort
     expect(read('keep', 'high')).toEqual({ family: 'opus', effort: 'high' })
     expect(read('Opus', 'x-high')).toEqual({ family: 'opus', effort: 'xhigh' })
     expect(read('unclear')).toBe('unrecognized')
-    expect(parseAnswer('not json', OPUS_XHIGH)).toBe('unrecognized')
+    expect(parseAnswer('not json', sonnetHigh, OPUS_XHIGH)).toBe('unrecognized')
+    expect(plainAnswer('sonnet', sonnetHigh, OPUS_XHIGH)).toEqual({ family: 'sonnet', effort: 'high' })
     expect(read('opus')).toEqual({ family: 'opus', effort: 'xhigh' }) // the current effort
     const rec = parseRec(SONNET_PICK)!
     expect(plainAnswer('sonnet', rec, OPUS_XHIGH)).toEqual({ family: 'sonnet', effort: 'medium' })
