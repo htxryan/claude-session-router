@@ -258,16 +258,21 @@ export const register: Register = (on, options) => {
           cancelled = true
           return next(sent)
         }
-        // Another turn (a prompt from another surface, a notification) started
-        // the session while this prompt was being routed: too late to switch.
-        const late = (await read($, routing)) !== null
+        // Another turn (a prompt from another surface, a notification) may have
+        // started the session while this prompt was being routed: too late to
+        // switch then. (Only update sees writes made since this dispatch began.)
+        let late = false
+        await update($, routing, prev => {
+          late = prev !== null
+          return prev ?? value
+        })
         await log($, { origin: kind, excerpt: e.text.slice(0, 200), status: value.status, reason: value.reason, late, ...logged })
         if (late) {
           $.ui.status(undefined)
           pending = `another turn started before routing finished, so this session stays on ${currentLabel(await readCurrent($))}.`
           return next(sent)
         }
-        await settle($, value, statusLine)
+        $.ui.status(statusLine)
         pending = text
         return next(sent)
       }
@@ -430,7 +435,9 @@ export const register: Register = (on, options) => {
     const override = await takenOver($, r, e.effort, watching)
     if (!r.base || override !== r.override) {
       const status = override === 'model' ? undefined : `→ ${override ? LATEST[applied.family].name : label(applied.family, applied.effort)}`
-      await settle($, { ...r, base: r.base ?? { model: await $.session.model(), effort: e.effort }, override }, status)
+      const base = r.base ?? { model: await $.session.model(), effort: e.effort }
+      await update($, routing, prev => (prev?.status === 'routed' && prev.override !== 'auto' ? { ...prev, base, override } : prev))
+      $.ui.status(status)
     }
     if (override === 'model') return yield* next(e)
     // The session's effort once the person set one; a session that started on
