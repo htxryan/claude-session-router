@@ -25,7 +25,6 @@ export type Rec = {
   family: Family | 'keep'
   effort: Effort | null
   reason: string
-  confidence: number
   alternative: { family: Family; effort: Effort | null; why: string } | null
 }
 
@@ -65,15 +64,15 @@ export function defaultEffortOf(model: string): Effort | null {
   return baseId(model).includes('opus-4-7') ? 'xhigh' : 'high'
 }
 
-const asEffort = (v: unknown): Effort | null => {
+// An effort level, forgiving about case and punctuation ("High", "x-high").
+export const asEffort = (v: unknown): Effort | null => {
   const effort = typeof v === 'string' ? v.toLowerCase().replace(/[^a-z]/g, '') : ''
   return (EFFORTS as readonly string[]).includes(effort) ? (effort as Effort) : null
 }
 
 // A family from the router's reply, forgiving about case and full model IDs
 // ("Sonnet", "claude-sonnet-5-5").
-const asFamily = (v: unknown): Family | null =>
-  typeof v === 'string' ? (FAMILIES.find(f => v.toLowerCase().includes(f)) ?? null) : null
+const asFamily = (v: unknown): Family | null => (typeof v === 'string' ? familyOf(v) : null)
 
 // The families the router may recommend, from the excludeModels setting
 // ("fable" or "fable, haiku"). Unknown words are ignored.
@@ -136,7 +135,6 @@ export function parseRec(text: string): Rec | null {
     family,
     effort,
     reason,
-    confidence: typeof raw.confidence === 'number' ? raw.confidence : 0.5,
     alternative:
       alt && altFamily
         ? {

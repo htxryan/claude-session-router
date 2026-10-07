@@ -19,7 +19,7 @@ type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?:
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
 function engine(on: On, env: Env = {}) {
-  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[], routerInputs: [] as string[] }
+  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[], routerInputs: [] as string[], logs: [] as string[] }
   mock.store(on)
   mock.clock(on)
   const value = <T>(v: T) => ({ value: v }) as never
@@ -51,7 +51,10 @@ function engine(on: On, env: Env = {}) {
   on('command.register', (_$, e) => value({ command: e.name }))
   on('ui.status', () => value(undefined))
   on('ui.toast', () => value(undefined))
-  on('ui.log', () => value(undefined))
+  on('ui.log', (_$, e) => {
+    calls.logs.push(String((e as { text?: unknown }).text))
+    return value(undefined)
+  })
   on('config.list', () => value(env.fast ? [{ key: 'fast', value: true }] : []))
   on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context, origin: e.origin }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }) as never)
@@ -252,7 +255,7 @@ describe('routing a session', () => {
 
   test('the bypass prefix skips routing and is removed', async ($, on) => {
     const calls = engine(on)
-    const sent = await submit($, '~~ just do it')
+    const sent = await submit($, '  ~~ just do it')
     expect(sent.text).toBe('just do it')
     expect(calls.router).toBe(0)
   })
@@ -354,5 +357,15 @@ describe('routing a session', () => {
     const calls = engine(on, { fast: true })
     await submit($, 'Add a --dry-run flag')
     expect(calls.asked[0]).toMatch(/Fast mode only applies to Opus\.\)$/)
+  })
+
+  test('says so when another model answered the first routed turn', async ($, on) => {
+    const calls = engine(on)
+    on('turn.complete', () => ({ text: '' }) as never)
+    await submit($, 'Add a --dry-run flag')
+    const done = { turnId: 't1', reason: 'end_turn', text: 'ok', answer: 'ok' }
+    await $.turn.complete({ ...done, usage: { model: 'claude-opus-4-8' } } as never)
+    await $.turn.complete({ ...done, usage: { model: 'claude-opus-4-8' } } as never)
+    expect(calls.logs.filter(n => n.includes('but claude-opus-4-8 answered')).length).toBe(1)
   })
 })
