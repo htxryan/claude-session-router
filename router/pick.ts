@@ -175,18 +175,20 @@ export function isCloseEnough(rec: Rec, current: Current): boolean {
 
 export type Option = { label: string; choice: Choice }
 
+// Whether a choice is what the session already runs on.
+export const isCurrent = (choice: { family: Family; effort: Effort | null }, current: Current): boolean =>
+  isLatest(current.model) && choice.family === current.family && (choice.family === 'haiku' || choice.effort === current.effort)
+
 // The choices in the picker. A pick that is just the current setting (asked
 // anyway under askWhenClose) is offered as keeping it.
 export function options(rec: Rec, current: Current): Option[] {
-  const isCurrent = (family: Family, effort: Effort | null) =>
-    isLatest(current.model) && family === current.family && (family === 'haiku' || effort === current.effort)
-  const keeps = rec.family === 'keep' || isCurrent(rec.family, rec.effort)
+  const keeps = rec.family === 'keep' || isCurrent({ family: rec.family, effort: rec.effort }, current)
   const out: Option[] = []
   if (!keeps && rec.family !== 'keep') {
     out.push({ label: `${label(rec.family, rec.effort)} (Recommended)`, choice: { family: rec.family, effort: rec.effort } })
   }
   const alt = rec.alternative
-  if (alt && !isCurrent(alt.family, alt.effort) && !(alt.family === rec.family && alt.effort === rec.effort)) {
+  if (alt && !isCurrent(alt, current) && !(alt.family === rec.family && alt.effort === rec.effort)) {
     out.push({
       label: alt.why ? `${label(alt.family, alt.effort)} — ${alt.why}` : label(alt.family, alt.effort),
       choice: { family: alt.family, effort: alt.effort },
@@ -204,8 +206,12 @@ export function options(rec: Rec, current: Current): Option[] {
 // "use" follows a dropped model ("don't use opus or fable", "instead of opus
 // use sonnet"). An effort on its own applies to the recommended model,
 // unless the answer turned that model down.
-const NEGATIONS = new Set(['not', 'no', 'don', 'dont', 'never', 'without', 'instead', 'rather', 'avoid', 'skip', 'except'])
+const NEGATIONS = new Set(['not', 'no', 'nor', 'don', 'dont', 'doesn', 'isn', 'aren', 'won', 'wouldn', 'shouldn', 'never', 'without', 'instead', 'rather', 'avoid', 'skip', 'except'])
+// Negations that follow the model they turn down ("opus isn't needed").
+const TRAILING = new Set(['isn', 'aren', 'doesn', 'won', 'wouldn', 'shouldn'])
 const RESUMES = new Set(['use', 'with', 'go', 'pick', 'try', 'take', 'prefer', 'want', 'choose'])
+
+const isFamily = (w: string) => (FAMILIES as readonly string[]).includes(w)
 
 // The words that count, and the models the answer turned down.
 function meantWords(answer: string): { out: string[]; refused: string[] } {
@@ -215,11 +221,16 @@ function meantWords(answer: string): { out: string[]; refused: string[] } {
   for (const clause of text.split(/[,.;:!?()]|\bbut\b/)) {
     let negated = false
     let dropped = false
+    let previous = ''
     for (const w of clause.split(/[^a-z]+/).filter(Boolean)) {
+      if (TRAILING.has(w) && isFamily(previous) && out.at(-1) === previous) {
+        refused.push(out.pop()!)
+      }
+      previous = w
       if (NEGATIONS.has(w)) negated = true
       else if (negated && dropped && RESUMES.has(w)) negated = dropped = false
       else if (!negated) out.push(w)
-      else if ((FAMILIES as readonly string[]).includes(w)) {
+      else if (isFamily(w)) {
         dropped = true
         refused.push(w)
       }
@@ -231,13 +242,14 @@ function meantWords(answer: string): { out: string[]; refused: string[] } {
 const lastOf = <T extends string>(words: readonly string[], set: readonly T[]): T | null =>
   (words.findLast(w => (set as readonly string[]).includes(w)) as T | undefined) ?? null
 
-export function resolveAnswer(answer: string, opts: readonly Option[], rec?: Rec): Choice | 'unrecognized' {
+// Naming the current model without an effort ("keep opus") keeps its effort.
+export function resolveAnswer(answer: string, opts: readonly Option[], rec?: Rec, current?: Current): Choice | 'unrecognized' {
   const exact = opts.find(o => o.label === answer)
   if (exact) return exact.choice
   const { out: meant, refused } = meantWords(answer)
   const family = lastOf(meant, FAMILIES)
   const effort = lastOf(meant, EFFORTS)
-  if (family) return { family, effort: effortFor(family, effort) }
+  if (family) return { family, effort: effortFor(family, effort ?? (family === current?.family ? current.effort : null)) }
   if (meant.includes('keep') || meant.includes('current')) return null
   if (effort && rec && rec.family !== 'keep' && rec.family !== 'haiku' && !refused.includes(rec.family)) return { family: rec.family, effort }
   return 'unrecognized'
