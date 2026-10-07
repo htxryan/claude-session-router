@@ -40,6 +40,7 @@ function engine(on: On, env: Env = {}) {
   on('model.complete', (_$, e) => {
     calls.router += 1
     calls.routerInputs.push(String((e as { prompt?: unknown }).prompt))
+    if (env.reply === 'reject') throw new Error('model claude-nope is not available')
     if (env.reply === null) return value({ isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded_error', usage: USAGE })
     return value({ isAnswered: true, text: env.reply ?? SONNET_PICK, usage: USAGE })
   })
@@ -118,6 +119,18 @@ describe('pick logic', () => {
     expect(resolveAnswer("don't switch, keep it", opts)).toBe(null)
     expect(resolveAnswer('low', opts, parseRec(SONNET_PICK)!)).toEqual({ family: 'sonnet', effort: 'low' })
     expect(resolveAnswer('not sure', opts)).toBe('unrecognized')
+    expect(resolveAnswer('fable is overkill, use opus', opts)).toEqual({ family: 'opus', effort: 'medium' })
+    expect(resolveAnswer('sonnet? no, haiku', opts)).toEqual({ family: 'haiku', effort: null })
+    expect(resolveAnswer('instead of opus use sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(resolveAnswer('rather than opus, go with sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(resolveAnswer("don't use opus or fable", opts)).toBe('unrecognized')
+    expect(resolveAnswer('opus x-high', opts)).toEqual({ family: 'opus', effort: 'xhigh' })
+    expect(resolveAnswer('opus extra high', opts)).toEqual({ family: 'opus', effort: 'xhigh' })
+  })
+
+  test('a pick that is the current setting is offered as keeping it', () => {
+    const same = options(parseRec('{"model":"opus","effort":"xhigh","reason":"x","alternative":{"model":"opus","effort":"xhigh"}}')!, OPUS_XHIGH)
+    expect(same.map(o => o.label)).toEqual(['Keep Opus 5.5 · xhigh (Recommended)'])
   })
 })
 
@@ -288,7 +301,8 @@ describe('routing a session', () => {
   })
 
   test('changing the effort ends only the effort part of the switch; changing the model ends all of it', async ($, on) => {
-    engine(on)
+    const env: Env = {}
+    engine(on, env)
     const seen: { model: string; effort?: unknown }[] = []
     on('turn.step', async function* (_$, e) {
       seen.push({ model: e.model, effort: e.effort })
@@ -302,10 +316,13 @@ describe('routing a session', () => {
     await drain({ ...step, effort: 'low' }) // /effort low
     expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' })
     expect(await routerSays($)).toMatch(/the model switch still applies/)
+    await drain({ ...step, model: 'claude-haiku-4-5', effort: 'low' }) // a fallback for one request
+    expect(seen.at(-1)!.model).toBe('claude-sonnet-5-5')
+    env.model = 'claude-opus-4-8'
     await drain({ ...step, model: 'claude-opus-4-8', effort: 'low' }) // /model
     expect(seen.at(-1)).toEqual({ model: 'claude-opus-4-8', effort: 'low' })
-    await drain({ ...step, effort: 'low' })
-    expect(seen.at(-1)!.model).toBe('claude-opus-5-5')
+    await drain({ ...step, model: 'claude-opus-4-8', effort: 'low' })
+    expect(seen.at(-1)!.model).toBe('claude-opus-4-8')
     expect(await routerSays($)).toMatch(/switch has ended/)
   })
 
@@ -384,7 +401,7 @@ describe('routing a session', () => {
   test('with fast mode on, a non-Opus pick says fast mode only applies to Opus', async ($, on) => {
     const calls = engine(on, { fast: true })
     await submit($, 'Add a --dry-run flag')
-    expect(calls.asked[0]).toMatch(/Fast mode only applies to Opus\.\)$/)
+    expect(calls.asked[0]).toMatch(/Fast mode only applies to Opus\. Run this session on Sonnet 5\.5 · medium\?$/)
   })
 
   test('says so when another model answered the first routed turn', async ($, on) => {
@@ -415,5 +432,28 @@ describe('routing a session', () => {
     await drain(step)
     await drain({ ...step, index: 1 })
     expect(seen).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
+  })
+
+  test('a router request that is refused skips routing and says why', async ($, on) => {
+    const calls = engine(on, { reply: 'reject' })
+    const sent = await submit($, 'Add a --dry-run flag')
+    expect(sent.text).toBe('Add a --dry-run flag')
+    expect(await routerSays($)).toMatch(/^Routing skipped. Router unavailable \(.+\)\.$/)
+    expect(calls.asked.length).toBe(0)
+  })
+
+  test('/resume of another conversation resets routing', async ($, on) => {
+    const calls = engine(on)
+    await submit($, 'Add a --dry-run flag')
+    await $.session.end({ reason: 'resume', sessionId: 's1' } as never)
+    expect(await routerSays($)).toMatch(/^Not routed yet/)
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.router).toBe(2)
+  })
+
+  test('a second first prompt while the first is being routed is not routed', async ($, on) => {
+    const calls = engine(on)
+    await Promise.all([submit($, 'Add a --dry-run flag'), submit($, 'Something else', 'bridge')])
+    expect(calls.router).toBe(1)
   })
 })
