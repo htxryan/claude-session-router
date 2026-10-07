@@ -51,8 +51,13 @@ It only switches the model for this session. It never runs `/model`, so your sav
 
 ## Costs and limits
 
-- **One router call per new session.** Before your first prompt is sent, Opus 5.5 at medium effort reads it. That adds a few seconds (about 5 on average) and uses a little of your plan or API credits. If you type your own answer in the picker instead of choosing an option, a second short call at low effort reads it. Later prompts cost nothing extra.
-- **Fable can cost more.** On some plans, Fable usage is billed to usage credits. If you'd rather never be offered it, add `fable` to the models to never recommend.
+- **One router call per new session.** Opus 5.5 at medium effort reads your first prompt, which takes about 5 seconds and a little of your plan or API credits. Typing your own answer in the picker adds a short low-effort call. Later prompts cost nothing extra.
+- **Fable can cost more.** Some plans bill it to usage credits. To never be offered it, add `fable` to the models to never recommend.
+- **Subagents and compaction follow the original model.** Subagents that inherit the main model (including Explore) run on the model the session started with, and Claude Code plans compaction for that model's context window. A session routed from 1M-context Opus to Haiku 4.5 (200k) can reach Haiku's limit first.
+- **`/effort` saves to the original model** as its default effort.
+- **`claude --effort` isn't visible to plugins.** The picker shows your saved effort as current, but the flag still applies if you keep the current model.
+- **A wrong type in `pluginConfigs` stops the plugin loading**, and the error only appears in the debug log. Set options through `/plugin` instead of editing `settings.json`.
+- **In the picker,** Esc and "Chat about this" keep the current model, and Ctrl+C doesn't close it. Text typed while it's routing stays in the prompt box rather than joining the first prompt.
 
 ## Sources
 
