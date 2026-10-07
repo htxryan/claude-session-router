@@ -414,7 +414,7 @@ export const register: Register = (on, options) => {
       await notice($, pending)
       pending = null
     }
-    if (undecided) await settle($, { status: 'skipped', applied: null, reason: 'The session was already under way.' })
+    if (undecided) await update($, routing, prev => prev ?? { status: 'skipped', applied: null, reason: 'The session was already under way.' })
     return next(e)
   })
 
