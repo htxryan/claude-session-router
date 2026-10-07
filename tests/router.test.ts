@@ -14,7 +14,7 @@ const SONNET_PICK = JSON.stringify({
   alternative: { model: 'opus', effort: 'low', why: 'stronger model, similar cost' },
 })
 
-type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean }
+type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean; rows?: string[] }
 
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
@@ -24,8 +24,10 @@ function engine(on: On, env: Env = {}) {
   mock.clock(on)
   const value = <T>(v: T) => ({ value: v }) as never
   on('session.turns', () => value(env.turns ?? 0))
-  on('session.messages', () =>
-    value(Array.from({ length: env.replies ?? 0 }, () => ({ role: 'assistant', content: [] }))))
+  on('session.messages', (_$, e) =>
+    (e as { as?: string }).as === 'api'
+      ? value(Array.from({ length: env.replies ?? 0 }, () => ({ role: 'assistant', content: [] })))
+      : value((env.rows ?? []).map(text => ({ role: 'user', text, toolUses: [] }))))
   on('session.surfaces', () => value(env.surfaces ?? ['terminal']))
   on('session.model', () => value(env.model ?? 'claude-opus-5-5'))
   on('session.cwd', () => value('/Users/me/src/example-app'))
@@ -285,24 +287,50 @@ describe('routing a session', () => {
     expect(calls.router).toBe(0)
   })
 
-  test('/effort ends only the effort part of the switch; /model ends all of it', async ($, on) => {
+  test('changing the effort ends only the effort part of the switch; changing the model ends all of it', async ($, on) => {
     engine(on)
     const seen: { model: string; effort?: unknown }[] = []
     on('turn.step', async function* (_$, e) {
       seen.push({ model: e.model, effort: e.effort })
       return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
     })
-    on('command.run', (_$, e) => ({ text: '' }) as never)
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
     const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'low', messageCount: 1 }
-    await $.command.run({ command: 'effort', args: 'low', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
     await drain(step)
-    expect(seen[0]).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' })
+    expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium' })
+    await drain({ ...step, effort: 'low' }) // /effort low
+    expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' })
     expect(await routerSays($)).toMatch(/the model switch still applies/)
-    await $.command.run({ command: 'model', args: 'opus', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+    await drain({ ...step, model: 'claude-opus-4-8', effort: 'low' }) // /model
+    expect(seen.at(-1)).toEqual({ model: 'claude-opus-4-8', effort: 'low' })
+    await drain({ ...step, effort: 'low' })
+    expect(seen.at(-1)!.model).toBe('claude-opus-5-5')
+    expect(await routerSays($)).toMatch(/switch has ended/)
+  })
+
+  test('opening /model and pressing Esc keeps the switch; picking the original model ends it', async ($, on) => {
+    const env: Env = { rows: ['Add a --dry-run flag'] }
+    engine(on, env)
+    const seen: string[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push(e.model)
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
+    })
+    on('command.run', () => ({ text: '' }) as never)
+    await submit($, 'Add a --dry-run flag to scripts/sync.py')
+    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
+    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
+    const run = (command: string) => $.command.run({ command, args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
     await drain(step)
-    expect(seen[1]).toEqual({ model: 'claude-opus-5-5', effort: 'low' })
+    await run('model')
+    env.rows!.push('<local-command-stdout>Kept model as Opus 5.5</local-command-stdout>')
+    await drain(step)
+    expect(seen.at(-1)).toBe('claude-sonnet-5-5')
+    await run('model')
+    env.rows!.push('<local-command-stdout>Set model to `Opus 5.5` for this session only</local-command-stdout>')
+    await drain(step)
+    expect(seen.at(-1)).toBe('claude-opus-5-5')
   })
 
   test('ask-when-close asks even when the router would keep the current model', { options: { askWhenClose: true } }, async ($, on) => {
