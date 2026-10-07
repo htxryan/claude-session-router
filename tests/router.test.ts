@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { ANSWER_SYSTEM, allowedFamilies, currentLabel, defaultEffortOf, isCloseEnough, modelName, options, parseAnswer, parseRec, restrict } from '../router/pick'
+import { ANSWER_SYSTEM, allowedFamilies, currentLabel, defaultEffortOf, isCloseEnough, modelName, options, parseAnswer, parseRec, plainAnswer, restrict } from '../router/pick'
 import type { Current } from '../router/pick'
 
 const OPUS_XHIGH: Current = { family: 'opus', model: 'claude-opus-5-5', effort: 'xhigh' }
@@ -119,6 +119,15 @@ describe('pick logic', () => {
     expect(read('Opus', 'x-high')).toEqual({ family: 'opus', effort: 'xhigh' })
     expect(read('unclear')).toBe('unrecognized')
     expect(parseAnswer('not json', OPUS_XHIGH)).toBe('unrecognized')
+    expect(read('opus')).toEqual({ family: 'opus', effort: 'xhigh' }) // the current effort
+    const rec = parseRec(SONNET_PICK)!
+    expect(plainAnswer('sonnet', rec, OPUS_XHIGH)).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(plainAnswer('Opus high', rec, OPUS_XHIGH)).toEqual({ family: 'opus', effort: 'high' })
+    expect(plainAnswer('opus', rec, OPUS_XHIGH)).toEqual({ family: 'opus', effort: 'xhigh' })
+    expect(plainAnswer('low', rec, OPUS_XHIGH)).toEqual({ family: 'sonnet', effort: 'low' })
+    expect(plainAnswer('haiku', rec, OPUS_XHIGH)).toEqual({ family: 'haiku', effort: null })
+    expect(plainAnswer('not opus', rec, OPUS_XHIGH)).toBe(undefined)
+    expect(plainAnswer('opus please', rec, OPUS_XHIGH)).toBe(undefined)
   })
 
   test('a pick that is the current setting is offered as keeping it', () => {
