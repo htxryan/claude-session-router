@@ -1,6 +1,6 @@
 {
   "name": "session-router",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Routes each new session's first prompt to the right Claude model and effort, explains why, and lets you override before it is sent.",
   "author": {
     "name": "Ryan Henderson"
