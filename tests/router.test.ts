@@ -129,6 +129,7 @@ describe('pick logic', () => {
     const fableMax = parseRec('{"model":"fable","effort":"max","reason":"x"}')!
     expect(resolveAnswer('no fable with max, too slow', opts, fableMax)).toBe('unrecognized')
     expect(resolveAnswer('no fable, use max', opts, fableMax)).toBe('unrecognized')
+    expect(resolveAnswer('instead of fable with opus', opts, fableMax)).toEqual({ family: 'opus', effort: 'medium' })
   })
 
   test('a pick that is the current setting is offered as keeping it', () => {
@@ -467,5 +468,21 @@ describe('routing a session', () => {
     await submit($, 'Fix the flaky retry logic')
     expect(calls.asked.length).toBe(0)
     expect(await routerSays($)).toMatch(/^Kept the current model/)
+  })
+
+  test('a refused request is retried as Claude Code sends it', async ($, on) => {
+    engine(on)
+    const seen: string[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push(e.model)
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: seen.length === 1 ? 'refusal' : 'end_turn', usage: null } as never
+    })
+    await submit($, 'Add a --dry-run flag to scripts/sync.py')
+    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
+    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
+    await drain(step)
+    await drain(step) // the retry, on the session's own model
+    await drain({ ...step, index: 1 })
+    expect(seen).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
   })
 })

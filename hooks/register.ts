@@ -156,6 +156,7 @@ export const register: Register = (on, options) => {
   // /model or /effort run since the last request, with the newest transcript row then.
   const watching = new Map<'model' | 'effort', string>()
   let busy = false // the first prompt is being routed
+  const retries = new Set<string>() // steps refused or failed on the routed model
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'router', description: 'Shows which model this session was routed to, and why.' })
@@ -177,6 +178,7 @@ export const register: Register = (on, options) => {
   on('session.end', async ($, e, next) => {
     checked = cancelled = busy = false
     watching.clear()
+    retries.clear()
     baseReplies = 0
     shellTurn = pending = null
     await settle($, null)
@@ -204,14 +206,16 @@ export const register: Register = (on, options) => {
 
       // Records the decision and sends the prompt on, noting it once the turn starts.
       const decide = async (value: Routing, text: string, statusLine?: string, logged: Record<string, unknown> = {}, sent = e) => {
-        // A prompt from another surface started the session while this one was routed.
-        if ((await read($, routing)) !== null) {
+        // Another turn (a prompt from another surface, a notification) started
+        // the session while this prompt was being routed: too late to switch.
+        const late = (await read($, routing)) !== null
+        await log($, { origin: kind, excerpt: e.text.slice(0, 200), status: value.status, reason: value.reason, late, ...logged })
+        if (late) {
           $.ui.status(undefined)
-          pending = `another prompt started the session first, so it stays on ${currentLabel(await readCurrent($))}.`
+          pending = `another turn started before routing finished, so this session stays on ${currentLabel(await readCurrent($))}.`
           return next(sent)
         }
         await settle($, value, statusLine)
-        await log($, { origin: kind, excerpt: e.text.slice(0, 200), status: value.status, reason: value.reason, ...logged })
         pending = text
         return next(sent)
       }
@@ -369,10 +373,15 @@ export const register: Register = (on, options) => {
     }
     // A request Claude Code sent to a fallback model (after a refusal or an
     // overload) goes as it is.
-    const fallback = !sameModel(e.model, await $.session.model()) && !sameModel(e.model, applied.model)
+    const step = `${e.turnId}:${e.index}`
+    const fallback = retries.has(step) || (!sameModel(e.model, await $.session.model()) && !sameModel(e.model, applied.model))
     if (override === 'model' || fallback) return yield* next(e)
     const effort = applied.effort && !override ? { effort: applied.effort } : {}
-    return yield* next({ ...e, model: applied.model, ...effort })
+    const result = yield* next({ ...e, model: applied.model, ...effort })
+    // Claude Code retries a refused or failed request, perhaps on a fallback
+    // model that is the session's own; that retry goes as it is.
+    if (result.stopReason === 'refusal' || result.stopReason === null) retries.add(step)
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {
