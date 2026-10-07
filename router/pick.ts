@@ -40,9 +40,9 @@ const asEffort = (v: unknown): Effort | null =>
 const asFamily = (v: unknown): Family | null =>
   typeof v === 'string' && (FAMILIES as readonly string[]).includes(v) ? (v as Family) : null
 
-// Every label names an effort; Haiku has no effort levels, so it says so.
+// Every label names an effort, except Haiku's: it has no effort levels.
 export const label = (family: Family, effort: Effort | null): string =>
-  `${LATEST[family].name} · ${family === 'haiku' ? 'effort n/a' : (effort ?? 'default effort')}`
+  family === 'haiku' ? LATEST[family].name : `${LATEST[family].name} · ${effort ?? 'default effort'}`
 
 export const currentLabel = (c: Current): string =>
   c.family ? label(c.family, c.effort) : `${c.model} · ${c.effort ?? 'default effort'}`

@@ -87,7 +87,7 @@ describe('pick logic', () => {
     ])
     const haikuFirst = options(parseRec('{"model":"haiku","reason":"quick","alternative":{"model":"opus","why":"safer"}}')!, OPUS_XHIGH)
     expect(haikuFirst.map(o => o.label)).toEqual([
-      'Haiku 4.5 · effort n/a (Recommended)',
+      'Haiku 4.5 (Recommended)',
       'Opus 5.5 · medium — safer',
       'Keep Opus 5.5 · xhigh (current)',
     ])
