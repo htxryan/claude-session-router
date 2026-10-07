@@ -53,6 +53,10 @@ export function modelName(model: string): string {
   return version ? `${title} ${version.replace('-', '.')}` : model
 }
 
+// Opus 5.5 and later models ignore a top-level effortLevel in user settings.
+export const ignoresTopLevelEffort = (model: string): boolean =>
+  ['claude-opus-5-5', 'claude-sonnet-5-5'].includes(baseId(model))
+
 // The effort a model runs at in Claude Code when nobody sets one.
 export function defaultEffortOf(model: string): Effort | null {
   const family = familyOf(model)

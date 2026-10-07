@@ -14,7 +14,7 @@ const SONNET_PICK = JSON.stringify({
   alternative: { model: 'opus', effort: 'low', why: 'stronger model, similar cost' },
 })
 
-type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number }
+type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean }
 
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
@@ -52,6 +52,7 @@ function engine(on: On, env: Env = {}) {
   on('ui.status', () => value(undefined))
   on('ui.toast', () => value(undefined))
   on('ui.log', () => value(undefined))
+  on('config.list', () => value(env.fast ? [{ key: 'fast', value: true }] : []))
   on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context, origin: e.origin }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }) as never)
   return calls
@@ -314,7 +315,7 @@ describe('routing a session', () => {
     const reply = JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits Opus.', alternative: null })
     const calls = engine(on, { reply, model: 'claude-opus-4-8' })
     await submit($, 'Design the sync protocol')
-    expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 4.8 · high (current)'])
+    expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 4.8 · xhigh (current)'])
   })
 
   test('local commands and shell commands before the first prompt do not stop routing', async ($, on) => {
@@ -341,5 +342,17 @@ describe('routing a session', () => {
     const sent = await submit($, '~~')
     expect(sent.text).toBe('~~')
     expect(calls.router).toBe(1)
+  })
+
+  test('a top-level effortLevel applies to models before Opus 5.5', async ($, on) => {
+    const calls = engine(on, { model: 'claude-fable-5-1' })
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.options[0]).toContain('Keep Fable 5.1 · xhigh (current)')
+  })
+
+  test('with fast mode on, a non-Opus pick says fast mode only applies to Opus', async ($, on) => {
+    const calls = engine(on, { fast: true })
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.asked[0]).toMatch(/Fast mode only applies to Opus\.\)$/)
   })
 })
