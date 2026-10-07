@@ -47,7 +47,7 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 - **See what happened:** `/session-router:explain`, or the line the plugin adds under your first prompt.
 - **Take over:** picking a model with `/model` ends the switch. Picking an effort with `/effort` ends only the effort part, so the routed model stays. Pressing Esc in either changes nothing.
 
-It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are routed only in auto mode. In Claude Cowork only the skill is expected to work, not the automatic routing.
+It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are routed only in auto mode. Automatic routing runs only in Claude Code. In Cowork and the Claude apps (web, desktop, mobile), you get the choose-model skill: ask which model and effort fit a task.
 
 ## Settings
 
