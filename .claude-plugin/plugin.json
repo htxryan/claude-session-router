@@ -14,12 +14,7 @@
     "effort",
     "reasoning-effort",
     "cost-optimization",
-    "token-savings",
-    "opus",
-    "sonnet",
-    "haiku",
-    "fable",
-    "mod"
+    "token-savings"
   ],
   "types": "./types/index.d.ts",
   "userConfig": {
