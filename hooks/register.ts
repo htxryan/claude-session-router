@@ -6,6 +6,7 @@ import {
   LATEST,
   allowedFamilies,
   asEffort,
+  baseId,
   currentLabel,
   defaultEffortOf,
   familyOf,
@@ -132,6 +133,8 @@ async function takenOver(
   return r.override
 }
 
+const sameModel = (a: string, b: string) => baseId(a) === baseId(b)
+
 const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${Math.round(ms / 1000)} s`)
 
 export const register: Register = (on, options) => {
@@ -201,6 +204,12 @@ export const register: Register = (on, options) => {
 
       // Records the decision and sends the prompt on, noting it once the turn starts.
       const decide = async (value: Routing, text: string, statusLine?: string, logged: Record<string, unknown> = {}, sent = e) => {
+        // A prompt from another surface started the session while this one was routed.
+        if ((await read($, routing)) !== null) {
+          $.ui.status(undefined)
+          pending = `another prompt started the session first, so it stays on ${currentLabel(await readCurrent($))}.`
+          return next(sent)
+        }
         await settle($, value, statusLine)
         await log($, { origin: kind, excerpt: e.text.slice(0, 200), status: value.status, reason: value.reason, ...logged })
         pending = text
@@ -271,7 +280,9 @@ export const register: Register = (on, options) => {
         return decide(kept(`Shadow mode: would ${would}. ${rec.reason}`), `shadow mode, would ${would}; staying on ${now}.${why}`)
       }
 
-      const askAnyway = options.askWhenClose === true && (rec.family !== 'keep' || rec.alternative !== null)
+      const opts = pickerOptions(rec, current)
+      // A picker with one choice would only be padded with Yes/No.
+      const askAnyway = options.askWhenClose === true && opts.length > 1
       if (!askAnyway && (rec.family === 'keep' || isCloseEnough(rec, current))) {
         const close = rec.family === 'keep' ? 'no reason to switch' : `close enough to its pick, ${suggested}`
         return decide(kept(rec.reason), `staying on ${now} (${close}).${why}`)
@@ -282,7 +293,6 @@ export const register: Register = (on, options) => {
       if (isRemote && remoteMode === 'auto') {
         choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
       } else {
-        const opts = pickerOptions(rec, current)
         const fastNote = rec.family !== 'keep' && rec.family !== 'opus' && (await fastModeOn($)) ? ' Fast mode only applies to Opus.' : ''
         const question = rec.family === 'keep' ? `Keep ${now}?` : `Run this session on ${suggested}?`
         try {
@@ -357,7 +367,10 @@ export const register: Register = (on, options) => {
       const status = override === 'model' ? undefined : `→ ${override ? LATEST[applied.family].name : label(applied.family, applied.effort)}`
       await settle($, { ...r, base: r.base ?? { model: await $.session.model(), effort: e.effort }, override }, status)
     }
-    if (override === 'model') return yield* next(e)
+    // A request Claude Code sent to a fallback model (after a refusal or an
+    // overload) goes as it is.
+    const fallback = !sameModel(e.model, await $.session.model()) && !sameModel(e.model, applied.model)
+    if (override === 'model' || fallback) return yield* next(e)
     const effort = applied.effort && !override ? { effort: applied.effort } : {}
     return yield* next({ ...e, model: applied.model, ...effort })
   })
