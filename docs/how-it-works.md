@@ -47,6 +47,7 @@ sequenceDiagram
 - **Your current effort** is read the way Claude Code resolves it: `--effort` or `CLAUDE_CODE_EFFORT_LEVEL`, then `modelSettings.<model>.effortLevel`, then the model's default. The 5.5 models ignore a top-level `effortLevel` in user settings.
 - **Fails open.** If the router errors or times out (30 s), the prompt is sent on the current model and the notice says so.
 - **Skipped** for headless runs (`claude -p`), prompts starting with `!!` (configurable), and, if you choose, Remote Control. On the phone the picker shows by default. Setting `remoteMode: auto` applies the pick without asking.
+- **Models to never recommend** (`excludeModels`, e.g. `fable`) are listed as off-limits in the router's input. If the router names one anyway, its allowed runner-up takes its place; if there is none, the current model stays. You can still type an excluded model in the picker.
 - **Modes** only break ties between close options: `frugal` favours the cheapest model that will finish, and `performance` the more capable one.
 - **Where it runs.** Automatic routing needs Claude Code's plugin hooks, and it was tested in the terminal. In Claude Cowork the skill is expected to work through the same plugin format, but automatic routing is untested and probably doesn't run.
 
@@ -65,18 +66,18 @@ Update the model table in the skill and `LATEST` in `router/pick.ts` when new mo
 
 ```sh
 claude plugin validate .
-claude plugin test .                                      # 16 hook tests
+claude plugin test .                                      # 18 hook tests
 uv run evals/run.py --runs 5                              # 38 prompts
-uv run evals/run.py --runs 5 --probes evals/holdout.json  # 18 held-out prompts
+uv run evals/run.py --runs 5 --probes evals/holdout.json  # 20 held-out prompts
 ```
 
 The evals call the router the way the plugin does, through `claude -p` on your own login, so they use your plan or credits. A run of 38 prompts × 5 takes about 2 minutes with 8 jobs (`--jobs 8`).
 
-Results on 2026-10-06 (Opus 5.5 at medium as the router):
+Results on 2026-10-07 (Opus 5.5 at medium as the router):
 
 | Set | Valid JSON | Acceptable pick | Same pick on repeat runs |
 |---|---|---|---|
 | Main, 38 × 5 | 100% | 100% | 98% |
-| Held out, 18 × 5 | 100% | 100% | 98% |
+| Held out, 20 × 5 | 100% | 100% | 96% |
 
-"Acceptable" means the pick was in the probe's range. Most probes accept several reasonable answers, for example Opus or Fable at certain efforts. The held-out prompts were written after the skill was tuned. They include sessions that start on Haiku, Sonnet or Fable, explicit model requests, and a prompt-injection attempt.
+"Acceptable" means the pick was in the probe's range. Most probes accept several reasonable answers, for example Opus or Fable at certain efforts. The held-out prompts were written after the skill was tuned. They include sessions that start on Haiku, Sonnet or Fable, explicit model requests, a prompt-injection attempt, and excluded models.

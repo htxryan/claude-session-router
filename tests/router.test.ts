@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { isCloseEnough, options, parseRec, resolveAnswer } from '../router/pick'
+import { allowedFamilies, isCloseEnough, options, parseRec, resolveAnswer, restrict } from '../router/pick'
 import type { Current } from '../router/pick'
 
 const OPUS_XHIGH: Current = { family: 'opus', model: 'claude-opus-5-5', effort: 'xhigh' }
@@ -19,22 +19,23 @@ type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?:
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
 function engine(on: On, env: Env = {}) {
-  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[] }
+  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[], routerInputs: [] as string[] }
   mock.store(on)
   mock.clock(on)
   const value = <T>(v: T) => ({ value: v }) as never
   on('session.turns', () => value(env.turns ?? 0))
   on('session.surfaces', () => value(env.surfaces ?? ['terminal']))
   on('session.model', () => value('claude-opus-5-5'))
-  on('session.cwd', () => value('/Users/me/src/personal-assistant'))
+  on('session.cwd', () => value('/Users/me/src/example-app'))
   on('settings.read', () => value({ effortLevel: 'xhigh', modelSettings: { 'claude-opus-5-5': { effortLevel: 'high' } } }))
   on('env.get', () => value(undefined))
   on('fs.read', (_$, e) => {
     calls.skillReads.push(String((e as { path?: unknown }).path))
     return value('---\nname: choose-model\n---\nRouting instructions.')
   })
-  on('model.complete', () => {
+  on('model.complete', (_$, e) => {
     calls.router += 1
+    calls.routerInputs.push(String((e as { prompt?: unknown }).prompt))
     if (env.reply === null) return value({ isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded_error', usage: USAGE })
     return value({ isAnswered: true, text: env.reply ?? SONNET_PICK, usage: USAGE })
   })
@@ -97,6 +98,39 @@ describe('pick logic', () => {
     expect(resolveAnswer('Haiku please', opts)).toEqual({ family: 'haiku', effort: null })
     expect(resolveAnswer('sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
     expect(resolveAnswer('whatever', opts)).toBe('unrecognized')
+  })
+})
+
+describe('excluded models', () => {
+  const FABLE_PICK = JSON.stringify({
+    model: 'fable',
+    effort: 'high',
+    reason: 'An unattended multi-hour port.',
+    alternative: { model: 'opus', effort: 'xhigh', why: 'cheaper, nearly as strong' },
+  })
+
+  test('reads the setting and holds the pick to it', () => {
+    expect(allowedFamilies('')).toEqual(['fable', 'opus', 'sonnet', 'haiku'])
+    expect(allowedFamilies('Fable, haiku')).toEqual(['opus', 'sonnet'])
+    const rec = restrict(parseRec(FABLE_PICK)!, allowedFamilies('fable'))
+    expect(rec.family).toBe('opus')
+    expect(rec.effort).toBe('xhigh')
+    expect(rec.alternative).toBe(null)
+    expect(rec.reason).toMatch(/Fable 5\.1 is excluded in your settings/)
+    const noAlt = restrict(parseRec(FABLE_PICK)!, allowedFamilies('fable, opus'))
+    expect(noAlt.family).toBe('keep')
+    const altDropped = restrict(parseRec(SONNET_PICK)!, allowedFamilies('opus'))
+    expect(altDropped.family).toBe('sonnet')
+    expect(altDropped.alternative).toBe(null)
+  })
+
+  test('the picker never offers an excluded model', { options: { excludeModels: 'fable' } }, async ($, on) => {
+    const reply = JSON.stringify({ ...JSON.parse(FABLE_PICK), alternative: { model: 'sonnet', effort: 'high', why: 'faster' } })
+    const calls = engine(on, { reply })
+    await submit($, 'Port this C library to Rust overnight')
+    expect(calls.options[0]).toEqual(['Sonnet 5.5 · high (Recommended)', 'Keep Opus 5.5 · high (current)'])
+    expect(calls.asked[0]).toMatch(/Fable 5\.1 is excluded in your settings/)
+    expect(calls.routerInputs[0]).toMatch(/"models": \[\s*"opus",\s*"sonnet",\s*"haiku"\s*\]/)
   })
 })
 

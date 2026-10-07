@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: Validate and test
+    runs-on: ubuntu-latest
+    env:
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Validate the plugin and marketplace
+        run: claude plugin validate .
+      - name: Run the hook tests
+        run: claude plugin test .
+      - name: Check the eval files
+        run: |
+          python3 -m py_compile evals/run.py
+          python3 -c "import json; [json.load(open(f)) for f in ('evals/probes.json', 'evals/holdout.json')]"

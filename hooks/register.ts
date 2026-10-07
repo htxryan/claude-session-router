@@ -5,6 +5,7 @@ import type { Choice, Effort, Routing } from '../types'
 import {
   DEFAULT_EFFORT,
   EFFORTS,
+  allowedFamilies,
   LATEST,
   currentLabel,
   familyOf,
@@ -13,6 +14,7 @@ import {
   options as pickerOptions,
   parseRec,
   resolveAnswer,
+  restrict,
   routerInput,
 } from '../router/pick'
 import type { Current, Rec } from '../router/pick'
@@ -88,6 +90,7 @@ export const register: Register = (on, options) => {
   const mode = String(options.mode ?? 'balanced')
   const remoteMode = String(options.remoteMode ?? 'ask')
   const prefix = String(options.bypassPrefix ?? '')
+  const allowed = allowedFamilies(options.excludeModels)
   let checked = false
   // The decision, noted under the prompt once its turn starts (a plugin's
   // append made after the prompt is handed on does not land).
@@ -162,6 +165,7 @@ export const register: Register = (on, options) => {
           mode,
           hasImages: (e.attachments ?? []).some(a => a.type === 'image'),
           preferences: [],
+          models: allowed,
         }),
         effort: asEffort(options.routerEffort) ?? 'medium',
         maxTokens: 1024,
@@ -169,7 +173,8 @@ export const register: Register = (on, options) => {
       },
       { signal: next.signal },
     )
-    const rec: Rec | null = reply.isAnswered ? parseRec(reply.text) : null
+    const parsed = reply.isAnswered ? parseRec(reply.text) : null
+    const rec: Rec | null = parsed && restrict(parsed, allowed)
     const entry = { origin: kind, project: await $.session.cwd(), excerpt: e.text.slice(0, 200), current, rec }
 
     if (!rec) {

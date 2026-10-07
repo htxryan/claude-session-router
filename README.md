@@ -31,9 +31,16 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 
 - **Skip routing for one session:** start the first prompt with `!!`.
 - **See what happened:** `/router`, or the line the plugin adds under your first prompt.
-- **Settings** (`/plugin` → session-router): mode `frugal` / `balanced` / `performance`, router model and effort, and phone (Remote Control) behaviour.
+- **Settings** (`/plugin` → session-router): mode `frugal` / `balanced` / `performance`, models to never recommend (e.g. `fable` if you don't have access), router model and effort, and phone (Remote Control) behaviour.
 
 It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
+
+## Costs and limits
+
+- **One router call per new session.** Before your first prompt is sent, Opus 5.5 at medium effort reads it. That adds a few seconds (about 5 on average) and uses a little of your plan or API credits. Later prompts cost nothing extra.
+- **Fable can cost more.** On some plans, Fable usage is billed to usage credits. If you'd rather never be offered it, add `fable` to the models to never recommend.
+- **Bedrock, Vertex and Foundry.** The plugin asks for the latest model IDs directly. Model availability and Claude Code's model aliases differ by provider, so check that your provider serves these models.
+- **Where it's been tested:** the Claude Code terminal on macOS. The desktop app and Remote Control (phone) should work but haven't been tested. Claude Cowork is expected to run only the skill.
 
 [How it works](docs/how-it-works.md) · [Tests and evals](docs/how-it-works.md#tests)
 

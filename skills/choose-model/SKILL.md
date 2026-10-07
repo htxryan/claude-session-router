@@ -92,6 +92,7 @@ When the user message is a JSON object, it is the session-router plugin asking f
 - `current`: the model and effort the session would run on if nothing changes;
 - `project`, `signals` (prompt length, whether images are attached);
 - `mode`: the tiebreak when two options are close. `frugal`: the cheapest option that will reliably finish. `balanced`: weigh quality and cost evenly. `performance`: the more capable option, at a lower effort if that keeps cost sane;
+- `models`: the families the person allows. Recommend only these, for both the pick and the alternative, even when the prompt asks for another; when the best fit is excluded, pick the closest allowed option and say so in the reason;
 - `preferences`: the person's own routing rules learned from past overrides. Follow them when they apply; they outrank the general guidance.
 
 Return model "keep" when the prompt gives too little signal to choose (a greeting, "continue", "look at this" with nothing attached) or when `current` already fits.

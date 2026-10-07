@@ -152,8 +152,8 @@
       "prefer": "opus"
     },
     {
-      "id": "todoist-add",
-      "prompt": "Add three tasks to my Todoist inbox: buy milk, call mom, renew passport.",
+      "id": "task-add",
+      "prompt": "Add three tasks to my to-do list: buy milk, call the dentist, renew passport.",
       "accept": {
         "haiku": [
           null
@@ -166,8 +166,8 @@
       "prefer": "haiku"
     },
     {
-      "id": "runbook-ip",
-      "prompt": "Update the Home Lab runbook: the Proxmox host moved to 192.168.1.20.",
+      "id": "wiki-ip",
+      "prompt": "Update the ops wiki page: the database host moved to 10.0.4.20.",
       "accept": {
         "haiku": [
           null
@@ -212,7 +212,7 @@
     },
     {
       "id": "price-research",
-      "prompt": "I want to research the cheapest price we can find online for the full box set of Grey's Anatomy on DVD",
+      "prompt": "Find the cheapest price online for a 27-inch 4K monitor with USB-C.",
       "accept": {
         "haiku": [
           null
@@ -231,7 +231,7 @@
     },
     {
       "id": "explain-script",
-      "prompt": "Explain how scripts/setup-gstack.py works and what it changes on disk.",
+      "prompt": "Explain how scripts/bootstrap.py works and what it changes on disk.",
       "accept": {
         "haiku": [
           null
@@ -249,8 +249,8 @@
       "prefer": "sonnet"
     },
     {
-      "id": "gmail-triage",
-      "prompt": "Triage my Gmail inbox: label newsletters, archive receipts, and list anything that needs a reply.",
+      "id": "inbox-triage",
+      "prompt": "Triage my email inbox: label newsletters, archive receipts, and list anything that needs a reply.",
       "accept": {
         "haiku": [
           null
@@ -285,7 +285,7 @@
     },
     {
       "id": "unit-tests",
-      "prompt": "Write unit tests for the budget split rules module and make sure they pass.",
+      "prompt": "Write unit tests for the invoice rounding module and make sure they pass.",
       "accept": {
         "sonnet": [
           "medium",
@@ -301,7 +301,7 @@
     },
     {
       "id": "week-plan",
-      "prompt": "Look at my calendar and Todoist for next week and propose a realistic schedule.",
+      "prompt": "Look at my calendar and to-do list for next week and propose a realistic schedule.",
       "accept": {
         "sonnet": [
           "low",
@@ -358,7 +358,7 @@
     },
     {
       "id": "detailed-feature",
-      "prompt": "Add CSV export to the media-shelf app. Requirements: an Export button on the library page; columns title, format, seasons, owned_on, notes; respects the current filters; streams for large libraries; filename media-shelf-YYYY-MM-DD.csv; unit tests for the serializer and an e2e test for the button. Follow the existing Hono + D1 patterns in apps/media-shelf.",
+      "prompt": "Add CSV export to the inventory app. Requirements: an Export button on the items page; columns name, sku, quantity, location, updated_at; respects the current filters; streams for large inventories; filename inventory-YYYY-MM-DD.csv; unit tests for the serializer and an e2e test for the button. Follow the existing Express + Postgres patterns in apps/inventory.",
       "accept": {
         "sonnet": [
           "medium",
@@ -497,7 +497,7 @@
     },
     {
       "id": "fullstack-app",
-      "prompt": "Build a full-stack app for tracking my book collection: auth, search, barcode scanning, a React frontend, a D1 backend, tests, and deploy it to Cloudflare. Keep going until it's live.",
+      "prompt": "Build a full-stack app for tracking my book collection: auth, search, barcode scanning, a React frontend, a Postgres backend, tests, and deploy it. Keep going until it's live.",
       "accept": {
         "opus": [
           "high",
@@ -578,9 +578,9 @@
     },
     {
       "id": "preference-applies",
-      "prompt": "Update the Home Lab runbook: the Proxmox host moved to 192.168.1.20.",
+      "prompt": "Update the ops wiki page: the database host moved to 10.0.4.20.",
       "preferences": [
-        "2026-10-01: Home Lab runbook edits → sonnet · medium (overrode haiku twice)"
+        "2026-10-01: ops wiki edits → sonnet · medium (overrode haiku twice)"
       ],
       "accept": {
         "sonnet": [
