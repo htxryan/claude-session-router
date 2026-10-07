@@ -181,8 +181,8 @@ export const register: Register = (on, options) => {
   let busy = false // the first prompt is being routed
   const retries = new Set<string>() // steps refused or failed on the routed model
 
-  // /session-router:router (commands/router.md), answered here without the model.
-  on('command.run', { command: 'session-router:router' }, async $ => ({ text: describe(await read($, routing)) }))
+  // /session-router:explain (commands/explain.md), answered here without the model.
+  on('command.run', { command: 'session-router:explain' }, async $ => ({ text: describe(await read($, routing)) }))
 
   // /model and /effort return before their dialog closes; note the newest
   // transcript row so the next request can tell a pick ("Set model to …")
