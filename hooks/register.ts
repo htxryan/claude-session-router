@@ -152,7 +152,7 @@ async function readAnswer(
   const reply = await $.model
     .complete({ model, system: ANSWER_SYSTEM, prompt: answerInput(answer, rec, current), effort: 'low', maxTokens: 200, timeoutMs: 15000 }, { signal })
     .catch(() => null)
-  return reply?.isAnswered ? parseAnswer(reply.text, current) : 'failed'
+  return reply?.isAnswered ? parseAnswer(reply.text, rec, current) : 'failed'
 }
 
 const sameModel = (a: string, b: string) => baseId(a) === baseId(b)
@@ -395,13 +395,14 @@ export const register: Register = (on, options) => {
   // A turn that starts with routing still undecided (a resumed session, a
   // notification or a skipped first prompt) closes routing for the session.
   on('turn.start', async ($, e, next) => {
-    if (cancelled) {
-      cancelled = false
-      return next(e)
-    }
     const undecided = (await read($, routing)) === null
     if (undecided && isShellTurn(e.text)) {
       shellTurn = e.turnId
+      return next(e)
+    }
+    // The turn of a prompt cancelled while routing.
+    if (cancelled) {
+      cancelled = false
       return next(e)
     }
     if (pending !== null) {

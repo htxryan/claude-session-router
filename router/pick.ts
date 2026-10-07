@@ -234,16 +234,19 @@ export function plainAnswer(answer: string, rec: Rec, current: Current): Choice 
   const words = answer.toLowerCase().trim().split(/\s+/)
   const family = words.length <= 2 ? (FAMILIES.find(f => words[0] === f) ?? null) : null
   const effort = asEffort(family ? (words[1] ?? '') : words.length === 1 ? words[0] : '')
-  if (family && (words.length === 1 || effort)) return { family, effort: effortFor(family, effort ?? inheritedEffort(family, current)) }
+  if (family && (words.length === 1 || effort)) return { family, effort: effortFor(family, effort ?? inheritedEffort(family, rec, current)) }
   if (!family && effort && rec.family !== 'keep' && rec.family !== 'haiku') return { family: rec.family, effort }
   return undefined
 }
 
-const inheritedEffort = (family: Family, current: Current): Effort | null => (family === current.family ? current.effort : null)
+// The effort for a model named without one: the current effort for the
+// current model, the recommended effort for the recommended model.
+const inheritedEffort = (family: Family, rec: Rec, current: Current): Effort | null =>
+  family === current.family ? current.effort : family === rec.family ? rec.effort : null
 
 // Reads the router model's reading of a typed answer; 'unrecognized' when it
 // couldn't tell or the reply isn't the contract.
-export function parseAnswer(text: string, current: Current): Choice | 'unrecognized' {
+export function parseAnswer(text: string, rec: Rec, current: Current): Choice | 'unrecognized' {
   const raw = readJson(text)
   if (!raw) return 'unrecognized'
   const effort = asEffort(raw.effort)
@@ -253,5 +256,5 @@ export function parseAnswer(text: string, current: Current): Choice | 'unrecogni
     return effort && family && family !== 'haiku' && isLatest(current.model) ? { family, effort } : null
   }
   const family = asFamily(raw.model)
-  return family ? { family, effort: effortFor(family, effort ?? inheritedEffort(family, current)) } : 'unrecognized'
+  return family ? { family, effort: effortFor(family, effort ?? inheritedEffort(family, rec, current)) } : 'unrecognized'
 }
