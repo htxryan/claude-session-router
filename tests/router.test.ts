@@ -14,7 +14,7 @@ const SONNET_PICK = JSON.stringify({
   alternative: { model: 'opus', effort: 'low', why: 'stronger model, similar cost' },
 })
 
-type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string }
+type Env = { reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number }
 
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
@@ -24,6 +24,8 @@ function engine(on: On, env: Env = {}) {
   mock.clock(on)
   const value = <T>(v: T) => ({ value: v }) as never
   on('session.turns', () => value(env.turns ?? 0))
+  on('session.messages', () =>
+    value(Array.from({ length: env.replies ?? 0 }, () => ({ role: 'assistant', content: [] }))))
   on('session.surfaces', () => value(env.surfaces ?? ['terminal']))
   on('session.model', () => value(env.model ?? 'claude-opus-5-5'))
   on('session.cwd', () => value('/Users/me/src/example-app'))
@@ -69,6 +71,10 @@ describe('pick logic', () => {
     expect(parseRec('{"model":"gpt","reason":"x"}')).toBe(null)
     expect(parseRec('not json')).toBe(null)
     expect(parseRec('{"model":"haiku","effort":"high","reason":"quick lookup"}')?.effort).toBe(null)
+    expect(parseRec('{"model":"Sonnet","effort":"High","reason":"x"}')).toMatchObject({ family: 'sonnet', effort: 'high' })
+    expect(parseRec('{"model":"claude-opus-5-5","effort":"x-high","reason":"x"}')).toMatchObject({ family: 'opus', effort: 'xhigh' })
+    expect(parseRec('{"model":"Keep","reason":"x"}')?.family).toBe('keep')
+    expect(restrict(parseRec('{"model":"opus","reason":"x"}')!, allowedFamilies('fable, opus, sonnet, haiku')).family).toBe('keep')
   })
 
   test('close enough means same family within one effort level', () => {
@@ -98,6 +104,14 @@ describe('pick logic', () => {
     expect(resolveAnswer('Haiku please', opts)).toEqual({ family: 'haiku', effort: null })
     expect(resolveAnswer('sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
     expect(resolveAnswer('whatever', opts)).toBe('unrecognized')
+    expect(resolveAnswer('not opus, use sonnet', opts)).toEqual({ family: 'sonnet', effort: 'medium' })
+    expect(resolveAnswer("don't use opus, haiku is fine", opts)).toEqual({ family: 'haiku', effort: null })
+    expect(resolveAnswer('not haiku, opus high', opts)).toEqual({ family: 'opus', effort: 'high' })
+    expect(resolveAnswer('opus instead of sonnet', opts)).toEqual({ family: 'opus', effort: 'medium' })
+    expect(resolveAnswer("don't keep it, use haiku", opts)).toEqual({ family: 'haiku', effort: null })
+    expect(resolveAnswer("don't switch, keep it", opts)).toBe(null)
+    expect(resolveAnswer('low', opts, parseRec(SONNET_PICK)!)).toEqual({ family: 'sonnet', effort: 'low' })
+    expect(resolveAnswer('not sure', opts)).toBe('unrecognized')
   })
 })
 
@@ -181,7 +195,7 @@ describe('routing a session', () => {
   })
 
   test('only the first prompt routes', async ($, on) => {
-    const calls = engine(on, { turns: 3 })
+    const calls = engine(on, { replies: 3 })
     await submit($, 'next thing')
     expect(calls.router).toBe(0)
   })
@@ -255,6 +269,7 @@ describe('routing a session', () => {
     await submit($, 'Add a --dry-run flag')
     env.turns = 1 // Claude Code keeps counting turns across /clear
     await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} as never })
+    env.replies = 0 // /clear empties the conversation
     expect(await routerSays($)).toMatch(/^Not routed yet/)
     await submit($, 'Something else')
     expect(calls.router).toBe(2)
@@ -300,5 +315,31 @@ describe('routing a session', () => {
     const calls = engine(on, { reply, model: 'claude-opus-4-8' })
     await submit($, 'Design the sync protocol')
     expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 4.8 · high (current)'])
+  })
+
+  test('local commands and shell commands before the first prompt do not stop routing', async ($, on) => {
+    const env: Env = {}
+    const calls = engine(on, env)
+    env.turns = 2 // /effort adds transcript rows, but the model hasn't replied
+    on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+    on('turn.complete', () => ({ text: '' }) as never)
+    await $.turn.start({ text: '<bash-stdout>hi</bash-stdout><bash-stderr></bash-stderr>', turnId: 'sh' })
+    env.replies = 1 // the model answered the shell output
+    await $.turn.complete({ turnId: 'sh', reason: 'end_turn', text: 'ok', answer: 'ok' } as never)
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.router).toBe(1)
+  })
+
+  test('a resumed session, where the model has already replied, is not routed', async ($, on) => {
+    const calls = engine(on, { replies: 3 })
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.router).toBe(0)
+  })
+
+  test('the bypass prefix on its own is sent as typed', async ($, on) => {
+    const calls = engine(on)
+    const sent = await submit($, '~~')
+    expect(sent.text).toBe('~~')
+    expect(calls.router).toBe(1)
   })
 })
