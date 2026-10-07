@@ -92,7 +92,7 @@ export function routerInput(args: {
   prompt: string
   current: Current
   cwd: string
-  mode: string
+  style: string
   hasImages: boolean
   preferences: readonly string[]
   models: readonly Family[]
@@ -104,7 +104,7 @@ export function routerInput(args: {
       current: { model: args.current.model, effort: args.current.effort ?? 'unknown' },
       project: args.cwd.split('/').filter(Boolean).slice(-2).join('/'),
       signals: { promptChars: args.prompt.length, hasImages: args.hasImages },
-      mode: args.mode,
+      style: args.style,
       models: args.models,
       preferences: args.preferences,
     },

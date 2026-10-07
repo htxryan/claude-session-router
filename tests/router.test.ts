@@ -286,6 +286,37 @@ describe('routing a session', () => {
     expect(calls.router).toBe(0)
   })
 
+  test('auto mode applies the pick without asking', { options: { mode: 'auto' } }, async ($, on) => {
+    const calls = engine(on)
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.asked.length).toBe(0)
+    expect(await routerSays($)).toMatch(/^Routed to Sonnet 5\.5 · medium\./)
+  })
+
+  test('auto mode routes headless runs, but not notifications', { options: { mode: 'auto' } }, async ($, on) => {
+    const calls = engine(on, { surfaces: [] })
+    await submit($, 'task finished', 'task-notification')
+    expect(calls.router).toBe(0)
+    await submit($, 'run the report', 'sdk')
+    expect(calls.router).toBe(1)
+    expect(calls.asked.length).toBe(0)
+    expect(await routerSays($)).toMatch(/^Routed to/)
+  })
+
+  test('auto mode never asks, even with ask-if-same on', { options: { mode: 'auto', askIfSame: true } }, async ($, on) => {
+    const calls = engine(on, { reply: JSON.stringify({ model: 'keep', effort: null, reason: 'Fits.', alternative: { model: 'sonnet', effort: 'medium', why: 'faster' } }) })
+    await submit($, 'Fix the pagination bug')
+    expect(calls.asked.length).toBe(0)
+    expect(await routerSays($)).toMatch(/^Kept the current model/)
+  })
+
+  test('shadow mode notes the pick without asking or switching', { options: { mode: 'shadow' } }, async ($, on) => {
+    const calls = engine(on)
+    await submit($, 'Add a --dry-run flag')
+    expect(calls.asked.length).toBe(0)
+    expect(await routerSays($)).toMatch(/Shadow mode: would pick Sonnet 5\.5 · medium/)
+  })
+
   test('remote auto mode applies the pick without asking', { options: { remoteMode: 'auto' } }, async ($, on) => {
     const calls = engine(on)
     await submit($, 'Add a --dry-run flag', 'bridge')

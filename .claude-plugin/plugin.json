@@ -11,7 +11,18 @@
   "userConfig": {
     "mode": {
       "type": "string",
-      "title": "Routing mode",
+      "title": "Mode",
+      "description": "default asks before switching; shadow notes the pick without asking or switching; auto applies it without asking, in headless runs (claude -p) too.",
+      "default": "default",
+      "options": [
+        "default",
+        "shadow",
+        "auto"
+      ]
+    },
+    "style": {
+      "type": "string",
+      "title": "Routing style",
       "description": "Tiebreak when two options are close: frugal prefers the cheapest model that will finish, performance the more capable model.",
       "default": "balanced",
       "options": [
@@ -48,7 +59,7 @@
     "remoteMode": {
       "type": "string",
       "title": "Remote Control prompts",
-      "description": "ask shows the picker on the phone too; auto applies the pick without asking; skip leaves phone sessions unrouted.",
+      "description": "In default mode: ask shows the picker on the phone too; auto applies the pick without asking; skip leaves phone sessions unrouted (in auto mode too).",
       "default": "ask",
       "options": [
         "ask",
@@ -73,12 +84,6 @@
       "title": "Router timeout (ms)",
       "description": "After this, the prompt is sent on the current model.",
       "default": 30000
-    },
-    "shadow": {
-      "type": "boolean",
-      "title": "Shadow mode",
-      "description": "Log the pick without asking or switching.",
-      "default": false
     }
   }
 }

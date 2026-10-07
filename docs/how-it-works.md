@@ -12,10 +12,12 @@ sequenceDiagram
     You->>CC: First prompt (new session or after /clear)
     CC->>Mod: prompt.submit hook
     Mod->>Mod: A person typed it, no turns yet, nothing routed yet?
-    Mod->>Opus: choose-model skill + the prompt, current model, mode
+    Mod->>Opus: choose-model skill + the prompt, current model, style
     Opus-->>Mod: { model, effort, reason, alternative }
     alt Already on the pick (same model and effort)
         Mod->>Mod: Keep the current model without asking
+    else Auto mode
+        Mod->>Mod: Apply the pick without asking
     else
         Mod->>You: Picker: Recommended / Alternative / Keep current / Other
         You-->>Mod: Choice (Esc keeps the current model)
