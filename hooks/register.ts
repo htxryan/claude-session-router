@@ -325,7 +325,9 @@ export const register: Register = (on, options) => {
               ? 'unreadable reply'
               : reply.reason === 'aborted'
                 ? `timed out after ${duration(timeoutMs)}`
-                : reply.reason
+                : reply.reason === 'api-error'
+                  ? `${reply.error}${reply.status ? `, HTTP ${reply.status}` : ''}`
+                  : reply.reason
         return decide(skipped(`Router unavailable (${failure}).`), `unavailable (${failure}); this session stays on ${now}.`)
       }
       const suggested = rec.family === 'keep' ? `keeping ${now}` : label(rec.family, rec.effort)
@@ -374,7 +376,9 @@ export const register: Register = (on, options) => {
               : resolved === 'failed'
                 ? "couldn't check your answer"
                 : 'you kept it'
-        return decide(kept(rec.reason), `staying on ${now} (${how}; it suggested ${suggested}).${why}`, undefined, { answer })
+        // Under askIfSame the suggestion was to keep it, so there is no other pick to name.
+        const suggestion = isSame(rec, current) ? '' : `; it suggested ${suggested}`
+        return decide(kept(rec.reason), `staying on ${now} (${how}${suggestion}).${why}`, undefined, { answer })
       }
 
       const applied = { family: choice.family, model: LATEST[choice.family].id, effort: choice.effort }

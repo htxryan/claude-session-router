@@ -263,7 +263,7 @@ describe('routing a session', () => {
     const sent = await submit($, 'hello')
     expect(sent.text).toBe('hello')
     expect(calls.asked.length).toBe(0)
-    expect(await routerSays($)).toMatch(/^Routing skipped/)
+    expect(await routerSays($)).toBe('Routing skipped. Router unavailable (overloaded_error, HTTP 529).')
   })
 
   test('headless runs, notifications and peers are never routed', async ($, on) => {
