@@ -247,7 +247,7 @@ export const register: Register = (on, options) => {
     if (e.turnId !== undefined || busy) return next(e)
     if (invalid.length && !warned) {
       warned = true
-      $.ui.log(`session-router: ignoring invalid settings: ${invalid.join('; ')}.`)
+      $.ui.log(`ignoring invalid settings: ${invalid.join('; ')}.`)
     }
     busy = true
     cancelled = false

@@ -323,7 +323,7 @@ describe('routing a session', () => {
     expect(calls.asked.length).toBe(0)
     expect(calls.routerInputs[0]).toContain('"style": "balanced"')
     const warnings = calls.logs.filter(l => l.includes('invalid settings'))
-    expect(warnings).toEqual(['session-router: ignoring invalid settings: style "cheap" (expected frugal, balanced, performance; using balanced); routerEffort "x-high" (expected low, medium, high, xhigh, max; using medium).'])
+    expect(warnings).toEqual(['ignoring invalid settings: style "cheap" (expected frugal, balanced, performance; using balanced); routerEffort "x-high" (expected low, medium, high, xhigh, max; using medium).'])
   })
 
   test('remote auto mode applies the pick without asking', { options: { remoteMode: 'auto' } }, async ($, on) => {
