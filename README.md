@@ -52,6 +52,28 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
   - **Router:** its model, effort and timeout.
   - **Remote Control:** `ask` (the default) shows the picker on your phone, `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted.
 
+The same settings in `~/.claude/settings.json`, with the defaults except for `excludeModels`:
+
+```jsonc
+{
+  "pluginConfigs": {
+    "session-router@claude-session-router": {
+      "options": {
+        "mode": "balanced",                 // frugal | balanced | performance
+        "excludeModels": "fable",           // comma-separated: fable, opus, sonnet, haiku
+        "routerModel": "claude-opus-5-5",
+        "routerEffort": "medium",           // low | medium | high | xhigh | max
+        "timeoutMs": 30000,                 // after this, the prompt goes on the current model
+        "remoteMode": "ask",                // ask | auto | skip
+        "bypassPrefix": "~~",               // avoid ! (shell mode) and / (commands)
+        "askWhenClose": false,              // true: ask even when the pick is close to the current setting
+        "shadow": false                     // true: log the pick without asking or switching
+      }
+    }
+  }
+}
+```
+
 It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
 
 ## Costs and limits
@@ -61,7 +83,7 @@ It only switches the model for this session. It never runs `/model`, so your sav
 - **Subagents and compaction follow the original model.** Subagents that inherit the main model (including Explore) run on the model the session started with, and Claude Code plans compaction for that model's context window. A session routed from 1M-context Opus to Haiku 4.5 (200k) can reach Haiku's limit first.
 - **`/effort` saves to the original model** as its default effort.
 - **`claude --effort` isn't visible to plugins.** The picker shows your saved effort as current, but the flag still applies if you keep the current model.
-- **A wrong type in `pluginConfigs` stops the plugin loading**, and the error only appears in the debug log. Set options through `/plugin` instead of editing `settings.json`.
+- **A wrong type in `pluginConfigs` stops the plugin loading**, for example `"30000"` (text) for `timeoutMs`, and the error only appears in the debug log. Setting options through `/plugin` avoids this.
 - **In the picker,** Esc and "Chat about this" keep the current model, and Ctrl+C doesn't close it. Text typed while it's routing stays in the prompt box rather than joining the first prompt.
 
 ## Sources
