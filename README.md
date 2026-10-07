@@ -46,13 +46,22 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 - **Skip routing for one session:** start the first prompt with `~~`.
 - **See what happened:** `/session-router:explain`, or the line the plugin adds under your first prompt.
 - **Take over:** picking a model with `/model` ends the switch. Picking an effort with `/effort` ends only the effort part, so the routed model stays. Pressing Esc in either changes nothing.
-- **Settings** (`/plugin` → session-router):
-  - **Mode:** `frugal`, `balanced` or `performance`.
-  - **Models to never recommend:** for example `fable` if you don't have access.
-  - **Router:** its model, effort and timeout.
-  - **Remote Control:** `ask` (the default) shows the picker on your phone, `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted.
 
-The same settings in `~/.claude/settings.json`, with the defaults except for `excludeModels`:
+It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
+
+## Settings
+
+Set them in `/plugin` → session-router, or in `~/.claude/settings.json`.
+
+- **Mode:** `frugal`, `balanced` (the default) or `performance`. Modes only break ties between close options: `frugal` favours the cheapest model that will finish the task, `performance` the more capable one.
+- **Models to never recommend:** for example `fable` if you don't have access. You can still type one in the picker.
+- **Router:** the model and effort that read your first prompt, and how long to wait for them (30 seconds by default).
+- **Remote Control:** `ask` (the default) shows the picker on your phone, `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted.
+- **Skip prefix:** `~~` by default. Avoid `!`, which starts shell mode, and `/`, which starts commands.
+- **Ask when close:** off by default, so a pick that's the model you're already on, at the same effort or one level away, is sent without asking and nothing changes. Turn it on to see the picker for those too.
+- **Shadow mode:** shows what it would pick, without asking or switching.
+
+The same settings in `settings.json`, with the defaults except for `excludeModels`:
 
 ```jsonc
 {
@@ -66,15 +75,13 @@ The same settings in `~/.claude/settings.json`, with the defaults except for `ex
         "timeoutMs": 30000,                 // after this, the prompt goes on the current model
         "remoteMode": "ask",                // ask | auto | skip
         "bypassPrefix": "~~",               // avoid ! (shell mode) and / (commands)
-        "askWhenClose": false,              // true: ask even when the pick is close to the current setting
+        "askWhenClose": false,              // true: show the picker even for a close pick
         "shadow": false                     // true: log the pick without asking or switching
       }
     }
   }
 }
 ```
-
-It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are never routed. In Claude Cowork only the skill is expected to work, not the automatic routing.
 
 ## Costs and limits
 
