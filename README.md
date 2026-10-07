@@ -11,6 +11,10 @@
 </p>
 <p align="center"><a href="#install">Install</a> · <a href="docs/how-it-works.md">How it works</a> · <a href="#sources">Sources</a></p>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="A real Claude Code session: the first prompt asks for a --dry-run flag, session-router recommends Sonnet 5.5 at medium effort and explains why, the person accepts, and Sonnet makes the change." width="100%">
+</p>
+
 Claude Session Router is a Claude Code plugin that picks the model and effort for each new session. When you send the first prompt of a session (or the first after `/clear`), Opus 5.5 reads it and recommends the latest Fable, Opus, Sonnet or Haiku and an effort level. It tells you why, and you confirm or override before the prompt is sent. Later prompts are never routed.
 
 The recommendations come from [one skill](skills/choose-model/SKILL.md) that condenses what Anthropic has published on choosing a model and effort level, current as of October 2026: the model docs, launch announcements and Claude Code guidance listed under [Sources](#sources). Where it can, the skill quotes Anthropic directly. You can also run it yourself: `/session-router:choose-model <task>`. This is an independent plugin, not an Anthropic product.
@@ -50,3 +54,7 @@ The guidance the skill is built on:
 - **Claude docs:** [Models overview](https://platform.claude.com/docs/en/about-claude/models/overview) · [Choosing a model](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model) · [Optimizing for cost and intelligence](https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence) · [Effort](https://platform.claude.com/docs/en/build-with-claude/effort) · Prompting guides for [Fable 5.1](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1), [Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5) and [Sonnet 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5)
 - **Claude Code:** [Model configuration](https://code.claude.com/docs/en/model-config) · [Choosing a Claude model and effort level in Claude Code](https://claude.com/blog/claude-model-and-effort-level-in-claude-code) · [Spending your effort](https://claude.dev/blog/spending-your-effort/) · [What a task costs on Opus 5.5](https://claude.dev/blog/what-a-task-costs-on-opus-5-5/) · [Building with Claude Sonnet 5.5](https://claude.dev/blog/building-with-claude-sonnet-5-5/) · [Opus 5.5 and longer coding sessions](https://claude.com/resources/articles/claude-opus-5-5-built-for-coding-sessions-that-use-more-context)
 - **Announcements:** [Fable 5.1](https://www.anthropic.com/claude-fable-and-mythos-5-1) · [Opus 5.5](https://www.anthropic.com/claude-opus-5-5) · [Sonnet 5.5](https://www.anthropic.com/claude-sonnet-5-5) · [Haiku 4.5](https://www.anthropic.com/news/claude-haiku-4-5)
+
+---
+
+<p align="center">Made with ❤️ by <a href="https://ryanhenderson.dev">Ryan Henderson</a></p>
