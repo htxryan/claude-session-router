@@ -159,10 +159,24 @@ const sameModel = (a: string, b: string) => baseId(a) === baseId(b)
 
 const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${Math.round(ms / 1000)} s`)
 
+// A setting limited to a few values. The directory doesn't accept `options` in
+// plugin.json, so Claude Code no longer checks these; an unknown value falls
+// back to the default and is named in `invalid`.
+function oneOf<T extends string>(name: string, value: unknown, allowed: readonly T[], fallback: T, invalid: string[]): T {
+  if (value === undefined || value === null || value === '') return fallback
+  const v = String(value).toLowerCase().trim()
+  if ((allowed as readonly string[]).includes(v)) return v as T
+  invalid.push(`${name} "${String(value)}" (expected ${allowed.join(', ')}; using ${fallback})`)
+  return fallback
+}
+
 export const register: Register = (on, options) => {
-  const style = String(options.style ?? 'balanced')
-  const mode = options.mode === 'shadow' || options.mode === 'auto' ? options.mode : 'default'
-  const remoteMode = String(options.remoteMode ?? 'ask')
+  const invalid: string[] = []
+  const style = oneOf('style', options.style, ['frugal', 'balanced', 'performance'], 'balanced', invalid)
+  const mode = oneOf('mode', options.mode, ['default', 'shadow', 'auto'], 'default', invalid)
+  const remoteMode = oneOf('remoteMode', options.remoteMode, ['ask', 'auto', 'skip'], 'ask', invalid)
+  const routerEffort = oneOf('routerEffort', options.routerEffort, ['low', 'medium', 'high', 'xhigh', 'max'], 'medium', invalid)
+  let warned = false // invalid settings were named once in this process
   const prefix = String(options.bypassPrefix ?? '')
   const routerModel = String(options.routerModel ?? 'claude-opus-5-5')
   const allowed = allowedFamilies(options.excludeModels)
@@ -231,6 +245,10 @@ export const register: Register = (on, options) => {
     // replied, never for a prompt typed while the first turn runs, and never
     // for a second prompt (from another surface) while the first is routed.
     if (e.turnId !== undefined || busy) return next(e)
+    if (invalid.length && !warned) {
+      warned = true
+      $.ui.log(`ignoring invalid settings: ${invalid.join('; ')}.`)
+    }
     busy = true
     cancelled = false
     try {
@@ -306,7 +324,7 @@ export const register: Register = (on, options) => {
             preferences: [],
             models: allowed,
           }),
-          effort: asEffort(options.routerEffort) ?? 'medium',
+          effort: routerEffort,
           maxTokens: 1024,
           timeoutMs,
         },

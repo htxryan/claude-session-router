@@ -12,24 +12,14 @@
     "mode": {
       "type": "string",
       "title": "Mode",
-      "description": "default asks before switching; shadow notes the pick without asking or switching; auto applies it without asking, in headless runs (claude -p) too.",
-      "default": "default",
-      "options": [
-        "default",
-        "shadow",
-        "auto"
-      ]
+      "description": "default, shadow or auto. default asks before switching; shadow notes the pick without asking or switching; auto applies it without asking, in headless runs (claude -p) too.",
+      "default": "default"
     },
     "style": {
       "type": "string",
       "title": "Routing style",
-      "description": "Tiebreak when two options are close: frugal prefers the cheapest model that will finish, performance the more capable model.",
-      "default": "balanced",
-      "options": [
-        "frugal",
-        "balanced",
-        "performance"
-      ]
+      "description": "frugal, balanced or performance. Tiebreak when two options are close: frugal prefers the cheapest model that will finish, performance the more capable model.",
+      "default": "balanced"
     },
     "excludeModels": {
       "type": "string",
@@ -46,26 +36,14 @@
     "routerEffort": {
       "type": "string",
       "title": "Router effort",
-      "description": "How hard the router thinks about the decision.",
-      "default": "medium",
-      "options": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ]
+      "description": "low, medium, high, xhigh or max. How hard the router thinks about the decision.",
+      "default": "medium"
     },
     "remoteMode": {
       "type": "string",
       "title": "Remote Control prompts",
-      "description": "In default mode: ask shows the picker on the phone too; auto applies the pick without asking; skip leaves phone sessions unrouted (in auto mode too).",
-      "default": "ask",
-      "options": [
-        "ask",
-        "auto",
-        "skip"
-      ]
+      "description": "ask, auto or skip. In default mode: ask shows the picker on the phone too; auto applies the pick without asking; skip leaves phone sessions unrouted (in auto mode too).",
+      "default": "ask"
     },
     "askIfSame": {
       "type": "boolean",
