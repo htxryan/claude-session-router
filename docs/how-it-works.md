@@ -42,7 +42,7 @@ sequenceDiagram
 
 ## Decisions
 
-- **Only the first prompt.** Routing happens only when the session has no turns yet and nothing has been routed. A prompt typed while the first turn runs, a second prompt, a resumed session (`--continue`, `--resume`), notifications and this plugin's own commands are never routed. `/clear` starts over. If you press Esc while it's routing, the prompt is cancelled and is routed again when you resend it.
+- **Only the first prompt.** Routing happens only when the session has no turns yet and nothing has been routed. The session counts as under way once the model has replied, so commands like `/effort` or `/status` and `!` shell commands before your first prompt don't stop it being routed. A prompt typed while the first turn runs, a second prompt, a resumed session (`--continue`, `--resume`), notifications and this plugin's own commands are never routed. `/clear` starts over. If you press Esc while it's routing, the prompt is cancelled and is routed again when you resend it.
 - **Switched per request, not with `/model`.** Running `/model` from a plugin also saves the choice as your account-wide default. The plugin instead rewrites `model` and `effort` on each main-loop request (`turn.step`). If you run `/model` yourself, the switch ends. If you run `/effort`, only the effort part ends and the routed model stays.
 - **Your current effort** is read the way Claude Code resolves it: `--effort` or `CLAUDE_CODE_EFFORT_LEVEL`, then `modelSettings.<model>.effortLevel`, then the model's default. The 5.5 models ignore a top-level `effortLevel` in user settings.
 - **Fails open.** If the router errors or times out (30 s), the prompt is sent on the current model and the notice says so.
@@ -88,4 +88,6 @@ Results on 2026-10-07 (Opus 5.5 at medium as the router):
 - **`/effort` saves to the original model.** In a routed session, Claude Code saves `/effort` as the default effort for the model the session started with, for example Opus, even though the routed model is what uses it.
 - **A bad value in settings stops the plugin loading.** If `pluginConfigs` in `settings.json` is edited by hand and a field has the wrong type, such as text for `timeoutMs`, Claude Code doesn't load the plugin, and the error only appears in the debug log. Setting options through `/plugin` avoids this.
 - **"Chat about this" in the picker** keeps the current model, the same as Esc.
+- **Typed answers in the picker** are read for a model and an effort ("sonnet low", "not opus, use sonnet", or just "low" for the recommended model at low effort). Anything else keeps the current model.
+- **An explicit `--model` is routed too.** Starting with `claude --model sonnet` still shows the picker, with your model as "Keep … (current)". Start the first prompt with `~~` to skip it.
 - **Type-ahead.** Text you type while the router is working stays in the prompt box. It isn't sent as part of the first prompt.

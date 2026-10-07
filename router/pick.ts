@@ -61,11 +61,15 @@ export function defaultEffortOf(model: string): Effort | null {
   return baseId(model).includes('opus-4-7') ? 'xhigh' : 'high'
 }
 
-const asEffort = (v: unknown): Effort | null =>
-  typeof v === 'string' && (EFFORTS as readonly string[]).includes(v) ? (v as Effort) : null
+const asEffort = (v: unknown): Effort | null => {
+  const effort = typeof v === 'string' ? v.toLowerCase().replace(/[^a-z]/g, '') : ''
+  return (EFFORTS as readonly string[]).includes(effort) ? (effort as Effort) : null
+}
 
+// A family from the router's reply, forgiving about case and full model IDs
+// ("Sonnet", "claude-sonnet-5-5").
 const asFamily = (v: unknown): Family | null =>
-  typeof v === 'string' && (FAMILIES as readonly string[]).includes(v) ? (v as Family) : null
+  typeof v === 'string' ? (FAMILIES.find(f => v.toLowerCase().includes(f)) ?? null) : null
 
 // The families the router may recommend, from the excludeModels setting
 // ("fable" or "fable, haiku"). Unknown words are ignored.
@@ -119,7 +123,7 @@ export function parseRec(text: string): Rec | null {
   }
   const reason = typeof raw.reason === 'string' ? raw.reason.trim() : ''
   if (!reason) return null
-  const family = raw.model === 'keep' ? 'keep' : asFamily(raw.model)
+  const family = String(raw.model).toLowerCase() === 'keep' ? 'keep' : asFamily(raw.model)
   if (family === null) return null
   const effort = family === 'keep' ? null : effortFor(family, asEffort(raw.effort))
   const alt = raw.alternative as Record<string, unknown> | null | undefined
@@ -191,12 +195,31 @@ export function options(rec: Rec, current: Current): Option[] {
 
 // Maps the picker's answer to a choice; null keeps the current model.
 // Free text under "Other" is read for a family and an effort ("fable max").
-export function resolveAnswer(answer: string, opts: readonly Option[]): Choice | 'unrecognized' {
+// A word after a negation in the same clause doesn't count ("don't use opus",
+// "not haiku, sonnet", "opus instead of sonnet"), and an effort on its own
+// applies to the recommended model.
+const NEGATIONS = new Set(['not', 'no', 'don', 'dont', 'never', 'without', 'instead', 'rather', 'avoid', 'skip', 'except'])
+
+function meantWords(answer: string): string[] {
+  const out: string[] = []
+  for (const clause of answer.toLowerCase().split(/[,.;:!?()]|\bbut\b/)) {
+    let negated = false
+    for (const w of clause.split(/[^a-z]+/).filter(Boolean)) {
+      if (NEGATIONS.has(w)) negated = true
+      else if (!negated) out.push(w)
+    }
+  }
+  return out
+}
+
+export function resolveAnswer(answer: string, opts: readonly Option[], rec?: Rec): Choice | 'unrecognized' {
   const exact = opts.find(o => o.label === answer)
   if (exact) return exact.choice
-  const words = answer.toLowerCase().split(/[^a-z]+/)
-  if (words.includes('keep') || words.includes('current')) return null
-  const family = FAMILIES.find(f => words.includes(f))
-  if (!family) return 'unrecognized'
-  return { family, effort: effortFor(family, EFFORTS.find(e => words.includes(e)) ?? null) }
+  const meant = meantWords(answer)
+  const family = FAMILIES.find(f => meant.includes(f))
+  const effort = EFFORTS.find(e => meant.includes(e)) ?? null
+  if (family) return { family, effort: effortFor(family, effort) }
+  if (meant.includes('keep') || meant.includes('current')) return null
+  if (effort && rec && rec.family !== 'keep' && rec.family !== 'haiku') return { family: rec.family, effort }
+  return 'unrecognized'
 }

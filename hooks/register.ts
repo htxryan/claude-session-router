@@ -44,6 +44,18 @@ async function readCurrent($: EngineInterface): Promise<Current> {
   return { family, model, effort }
 }
 
+// How many times the model has replied in the main conversation. Local
+// commands (/effort, /status) add transcript rows but no replies; /clear
+// empties it; a resumed session already has some.
+async function replies($: EngineInterface): Promise<number> {
+  const api = await $.session.messages({ as: 'api' })
+  return api.filter(m => m.role === 'assistant').length
+}
+
+// A turn Claude Code starts by itself to show the model a shell command's
+// output (a prompt starting with !).
+const isShellTurn = (text: string) => text.startsWith('<bash-')
+
 async function log($: EngineInterface, entry: Record<string, unknown>): Promise<void> {
   const prev = await $.store.get('log')
   const rows = Array.isArray(prev) ? prev : []
@@ -97,9 +109,10 @@ export const register: Register = (on, options) => {
   const prefix = String(options.bypassPrefix ?? '')
   const allowed = allowedFamilies(options.excludeModels)
   let checked = false
-  // Claude Code keeps counting turns across /clear; routing compares with the
-  // count at the last /clear.
-  let baseTurns = 0
+  // Model replies that don't count as the session getting under way: the
+  // ones to shell commands run before the first prompt.
+  let baseReplies = 0
+  let shellTurn: string | null = null
   // Set when Esc cancels the prompt while routing: the turn Claude Code still
   // starts for it doesn't count as the session getting under way.
   let cancelled = false
@@ -136,7 +149,8 @@ export const register: Register = (on, options) => {
   // /clear ends the session without a new session.start.
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
-      baseTurns = await $.session.turns()
+      baseReplies = 0
+      shellTurn = null
       checked = false
       cancelled = false
       pending = null
@@ -149,7 +163,7 @@ export const register: Register = (on, options) => {
     // Only the very first prompt of a session: never once any turn has run,
     // and never for a prompt typed while the first turn is still running.
     if (e.turnId !== undefined) return next(e)
-    if ((await read($, routing)) !== null || (await $.session.turns()) > baseTurns) return next(e)
+    if ((await read($, routing)) !== null || (await replies($)) > baseReplies) return next(e)
     // This plugin's own commands (asking choose-model for advice) aren't work to route.
     if (e.text.trimStart().startsWith('/session-router:')) return next(e)
 
@@ -166,7 +180,7 @@ export const register: Register = (on, options) => {
       await settle($, { status: 'skipped', applied: null, reason: 'Remote Control sessions are set to skip routing.', overridden: false })
       return announce(next, e, 'skipped (Remote Control sessions are set to skip routing).')
     }
-    if (prefix && e.text.startsWith(prefix)) {
+    if (prefix && e.text.startsWith(prefix) && e.text.slice(prefix.length).trim() !== '') {
       await settle($, { status: 'skipped', applied: null, reason: `Bypassed with ${prefix}.`, overridden: false })
       return announce(next, { ...e, text: e.text.slice(prefix.length).trimStart() }, `skipped for this session (${prefix} prefix).`)
     }
@@ -215,10 +229,10 @@ export const register: Register = (on, options) => {
     }
 
     if (options.shadow === true) {
-      const would = rec.family === 'keep' ? 'keep the current model' : label(rec.family, rec.effort)
+      const would = rec.family === 'keep' ? 'keep the current model' : `pick ${label(rec.family, rec.effort)}`
       await settle($, { status: 'kept', applied: null, reason: `Shadow mode: would ${would}. ${rec.reason}`, overridden: false })
       await log($, { ...entry, outcome: 'shadow' })
-      return announce(next, e, `shadow mode, would pick ${would}; staying on ${currentLabel(current)}.${why(rec.reason)}`)
+      return announce(next, e, `shadow mode, would ${would}; staying on ${currentLabel(current)}.${why(rec.reason)}`)
     }
 
     const askAnyway = options.askWhenClose === true && (rec.family !== 'keep' || rec.alternative !== null)
@@ -242,7 +256,7 @@ export const register: Register = (on, options) => {
           header: 'Model',
           options: opts.map(o => o.label),
         })
-        const resolved = resolveAnswer(answer, opts)
+        const resolved = resolveAnswer(answer, opts, rec)
         if (resolved === 'unrecognized') $.ui.toast(`Didn't recognize "${answer}"; staying on ${currentLabel(current)}`)
         choice = resolved === 'unrecognized' ? null : resolved
       } catch {
@@ -283,6 +297,10 @@ export const register: Register = (on, options) => {
       cancelled = false
       return next(e)
     }
+    if ((await read($, routing)) === null && isShellTurn(e.text)) {
+      shellTurn = e.turnId
+      return next(e)
+    }
     if (pending !== null) {
       const text = pending
       pending = null
@@ -310,6 +328,10 @@ export const register: Register = (on, options) => {
   // (a fallback or an allowlist substitution).
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
+    if (e.agentId === undefined && shellTurn !== null && e.turnId === shellTurn) {
+      shellTurn = null
+      baseReplies = await replies($)
+    }
     if (e.agentId !== undefined || checked) return result
     const r = await read($, routing)
     if (!r || r.status !== 'routed' || !r.applied) return result
