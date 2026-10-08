@@ -32,7 +32,7 @@ This is an independent plugin, not an Anthropic product.
 
 ## Install
 
-Needs Claude Code 2.1.293 or later (the first with Haiku 5.5).
+Needs Claude Code 2.1.293 or later.
 
 ```
 /plugin marketplace add htxryan/claude-session-router
@@ -46,25 +46,25 @@ To try it without installing: `claude --plugin-dir path/to/claude-session-router
 - **Skip routing for one session:** start the first prompt with `~~`.
 - **See what happened:** `/session-router:explain`, or the line the plugin adds under your first prompt.
 - **Take over:** picking a model with `/model` ends the switch. Picking an effort with `/effort` ends only the effort part, so the routed model stays. Pressing Esc in either changes nothing.
-
-It only switches the model for this session. It never runs `/model`, so your saved default stays as it is. If the router fails or takes longer than its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so. Headless runs (`claude -p`) are routed only in auto mode. Automatic routing runs only in Claude Code. In Cowork and the Claude apps (web, desktop, mobile), you get the choose-model skill: ask which model and effort fit a task.
+- **This session only:** it never runs `/model`, so your saved default stays as it is.
+- **If the router fails** or passes its timeout (30 seconds by default), the prompt is sent on the current model and the notice says so.
+- **Headless runs** (`claude -p`) are routed only in auto mode.
+- **Outside Claude Code:** in Cowork and the Claude apps (web, desktop, mobile), there is no automatic routing. You get the choose-model skill: ask which model and effort fit a task.
 
 ## Settings
 
 Set them in `/plugin` → session-router, or in `~/.claude/settings.json`.
 
-- **Mode:**
+- **`mode`:**
   - `default` shows the picker before switching.
   - `shadow` notes what it would pick, without asking or switching.
   - `auto` applies the pick without asking, and routes headless runs (`claude -p`) too.
-- **Style:** `frugal`, `balanced` (the default) or `performance`. Styles only break ties between close options: `frugal` favours the cheapest model that will finish the task, `performance` the more capable one.
-- **Models to never recommend:** for example `fable` if you don't have access. You can still type one in the picker.
-- **Router:** the model and effort that read your first prompt, and how long to wait for them (30 seconds by default).
-- **Remote Control:** in default mode, `ask` (the default) shows the picker on your phone, `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted. `skip` also holds in auto mode.
-- **Skip prefix:** `~~` by default. Avoid `!`, which starts shell mode, and `/`, which starts commands.
-- **Ask if same** (default mode only): off by default, so when the pick is the model and effort you're already on, the prompt is sent without asking. Turn it on to see the picker anyway. Any other pick, even one effort level away, always asks.
-
-The same settings in `settings.json`, with the defaults except for `excludeModels`:
+- **`style`:** `frugal`, `balanced` (the default) or `performance`. Styles only break ties between close options: `frugal` favours the cheapest model that will finish the task, `performance` the more capable one.
+- **`excludeModels`:** models to never recommend, for example `fable` if you don't have access. You can still type one in the picker.
+- **`routerModel`, `routerEffort` and `timeoutMs`:** the model and effort that read your first prompt, and how long to wait for them (30 seconds by default).
+- **`remoteMode`:** in default mode, `ask` (the default) shows the picker on your phone, `auto` applies the pick without asking, and `skip` leaves phone sessions unrouted. `skip` also holds in auto mode.
+- **`bypassPrefix`:** `~~` by default. Avoid `!`, which starts shell mode, and `/`, which starts commands.
+- **`askIfSame`** (default mode only): off by default, so when the pick is the model and effort you're already on, the prompt is sent without asking. Turn it on to see the picker anyway. Any other pick, even one effort level away, always asks.
 
 ```jsonc
 {
@@ -98,15 +98,15 @@ The same settings in `settings.json`, with the defaults except for `excludeModel
 
 ## What it hooks
 
-The plugin is a mod: TypeScript in [hooks/register.ts](hooks/register.ts) that Claude Code runs on these events. Beyond them it reads your effort settings (`settings.json` and `CLAUDE_CODE_EFFORT_LEVEL`), the session's transcript and its own skill file. The only thing it sends anywhere is the router call to Claude.
+The plugin is a mod: TypeScript in [hooks/register.ts](hooks/register.ts). Besides these events, it reads only your effort settings (`settings.json`, `CLAUDE_CODE_EFFORT_LEVEL`), the session transcript and its own skill file. The only thing it sends anywhere is the router call to Claude.
 
-- **`prompt.submit`:** on a session's first prompt only, checks whether to route it, then sends it on unchanged (minus the skip prefix). Later prompts pass through untouched.
-- **`turn.step`:** at the first prompt's first model request, before it is sent, asks the router model for a pick, shows the picker and adds the routing notice. The request carries the session's real effort, including one set by `claude --effort` or the desktop app's picker. After that, it sets the model and effort on each main-loop request of a routed session. It changes nothing else in the request, and leaves subagents alone.
-- **`turn.start` and `turn.complete`:** note a skipped first prompt, and note when another model answered (a fallback).
-- **`command.run`:** answers `/session-router:explain`. For `/model` and `/effort` it only notes the newest transcript line, to tell a pick from Esc; the command itself runs unchanged.
-- **`classic.SessionStart`:** reads whether the session was resumed or forked, so it isn't routed. It changes nothing.
-- **`classic.PostModelSwitch`:** reads whether Claude Code switched the model by itself, which ends the switch. It changes nothing.
-- **`session.end`:** clears the plugin's own state for the session.
+- **`prompt.submit`:** checks whether a session's first prompt should be routed, and strips the skip prefix. Other prompts pass through untouched.
+- **`turn.step`:** at the first prompt's first model request, routes it: router call, picker and notice, using the request's real effort. Then sets the model and effort on every main-loop request. Subagents are left alone.
+- **`turn.start` and `turn.complete`:** note a skipped first prompt, or a fallback model answering.
+- **`command.run`:** answers `/session-router:explain`, and tells a `/model` or `/effort` pick from Esc. Both commands run unchanged.
+- **`classic.SessionStart`:** skips resumed and forked sessions.
+- **`classic.PostModelSwitch`:** ends the switch when Claude Code changes the model itself.
+- **`session.end`:** clears the plugin's state.
 
 ## Sources
 
