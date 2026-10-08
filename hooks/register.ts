@@ -30,8 +30,9 @@ const routing = atom({ plugin: 'session-router', key: 'routing' } as const, null
 
 // The session's effort, resolved as Claude Code does: CLAUDE_CODE_EFFORT_LEVEL,
 // then the per-model setting, then a top-level effortLevel (which Opus 5.5 and
-// later models ignore), then the model's own default. An --effort flag on the
-// command line isn't visible to plugins.
+// later models ignore), then the model's own default. An effort set by
+// `claude --effort` or the desktop app's picker isn't visible here: routing
+// takes the effort from the first request instead.
 async function readCurrent($: EngineInterface): Promise<Current> {
   const model = await $.session.model()
   const family = familyOf(model)
@@ -188,13 +189,16 @@ export const register: Register = (on, options) => {
   let checked = false // the first routed turn's answering model was checked
   let baseReplies = 0 // replies to shell commands run before the first prompt
   let shellTurn: string | null = null
-  let cancelled = false // Esc cancelled the prompt while routing
-  // The decision, noted under the prompt once its turn starts (a plugin's
+  // A skipped first prompt's note, added once its turn starts (a plugin's
   // append made after the prompt is handed on does not land).
   let pending: string | null = null
+  // The first prompt, handed on to be routed at its turn's first request.
+  // `waiting` until that turn starts; kept if Esc cancels the turn while it is
+  // routed, so the resent prompt is routed instead.
+  let armed: { text: string; kind: string; isRemote: boolean; automatic: boolean; hasImages: boolean; waiting: boolean } | null = null
+  let armedTurn: string | null = null
   // /model or /effort run since the last request, with the newest transcript row then.
   const watching = new Map<'model' | 'effort', string>()
-  let busy = false // the first prompt is being routed
   const retries = new Set<string>() // steps refused or failed on the routed model
 
   // /session-router:explain (commands/explain.md), answered here without the model.
@@ -232,106 +236,131 @@ export const register: Register = (on, options) => {
   // /clear, or /resume of another conversation, ends the session without a
   // new session.start.
   on('session.end', async ($, e, next) => {
-    checked = cancelled = busy = false
+    checked = false
     watching.clear()
     retries.clear()
     baseReplies = 0
-    shellTurn = pending = null
+    shellTurn = pending = armed = armedTurn = null
     await settle($, null)
     return next(e)
   })
 
+  // The first prompt is only checked here, then handed on at once. It is
+  // routed at its turn's first request: an effort set by `claude --effort` or
+  // the desktop app's picker isn't visible to plugins until then.
   on('prompt.submit', async ($, e, next) => {
-    // Only the very first prompt of a session: never once the model has
-    // replied, never for a prompt typed while the first turn runs, and never
-    // for a second prompt (from another surface) while the first is routed.
-    if (e.turnId !== undefined || busy) return next(e)
+    if (e.turnId !== undefined) return next(e)
     if (invalid.length && !warned) {
       warned = true
       $.ui.log(`ignoring invalid settings: ${invalid.join('; ')}.`)
     }
-    busy = true
-    cancelled = false
-    try {
-      if ((await read($, routing)) !== null || (await replies($)) > baseReplies) return next(e)
-      // This plugin's own commands (asking choose-model for advice) aren't work to route.
-      if (e.text.trimStart().startsWith('/session-router:')) return next(e)
+    const hasImages = (e.attachments ?? []).some(a => a.type === 'image')
+    // Resent after Esc cancelled it while it was being routed: route the new text.
+    if (armed) {
+      armed = { ...armed, text: e.text, hasImages, waiting: true }
+      return next(e)
+    }
+    // Only the very first prompt of a session: never once the model has
+    // replied, and never for a prompt typed while the first turn runs.
+    if ((await read($, routing)) !== null || (await replies($)) > baseReplies) return next(e)
+    // This plugin's own commands (asking choose-model for advice) aren't work to route.
+    if (e.text.trimStart().startsWith('/session-router:')) return next(e)
 
-      // Your Enter in the terminal, the desktop app (an SDK host with a surface
-      // attached), or Remote Control; in auto mode, headless runs (claude -p,
-      // the Agent SDK) too, since nobody needs to be asked. Notifications,
-      // peers and schedules pass through unrouted.
-      const kind = e.origin.kind
-      const headless = kind === 'sdk' && (await $.session.surfaces()).length === 0
-      const isPerson = kind === 'composer' || kind === 'bridge' || (kind === 'sdk' && !headless)
-      if (!isPerson && !(headless && mode === 'auto')) return next(e)
-      const isRemote = kind === 'bridge'
-      const automatic = mode === 'auto' || (isRemote && remoteMode === 'auto')
+    // Your Enter in the terminal, the desktop app (an SDK host with a surface
+    // attached), or Remote Control; in auto mode, headless runs (claude -p,
+    // the Agent SDK) too, since nobody needs to be asked. Notifications,
+    // peers and schedules pass through unrouted.
+    const kind = e.origin.kind
+    const headless = kind === 'sdk' && (await $.session.surfaces()).length === 0
+    const isPerson = kind === 'composer' || kind === 'bridge' || (kind === 'sdk' && !headless)
+    if (!isPerson && !(headless && mode === 'auto')) return next(e)
+    const isRemote = kind === 'bridge'
 
-      // Records the decision and sends the prompt on, noting it once the turn starts.
-      const decide = async (value: Routing, text: string, statusLine?: string, logged: Record<string, unknown> = {}, sent = e) => {
-        // Esc while routing (or while reading a typed answer) cancels the
-        // prompt; route it again when it's resent.
-        if (next.signal.aborted) {
-          $.ui.status(undefined)
-          cancelled = true
-          return next(sent)
-        }
-        // Another turn (a prompt from another surface, a notification) may have
-        // started the session while this prompt was being routed: too late to
-        // switch then. (Only update sees writes made since this dispatch began.)
-        let late = false
-        await update($, routing, prev => {
-          late = prev !== null
-          return prev ?? value
-        })
-        await log($, { origin: kind, excerpt: e.text.slice(0, 200), status: value.status, reason: value.reason, late, ...logged })
-        if (late) {
-          $.ui.status(undefined)
-          pending = `another turn started before routing finished, so this session stays on ${currentLabel(await readCurrent($))}.`
-          return next(sent)
-        }
+    // Skipped: recorded now, noted once the turn starts.
+    const skip = async (reason: string, text: string, sent = e) => {
+      await update($, routing, prev => prev ?? { status: 'skipped' as const, applied: null, reason })
+      await log($, { origin: kind, excerpt: e.text.slice(0, 200), status: 'skipped', reason })
+      pending = text
+      return next(sent)
+    }
+    const typed = e.text.trimStart()
+    if (prefix && typed.startsWith(prefix) && typed.slice(prefix.length).trim() !== '') {
+      const text = typed.slice(prefix.length).trimStart()
+      return skip(`Bypassed with ${prefix}.`, `skipped for this session (${prefix} prefix).`, { ...e, text })
+    }
+    if (isRemote && remoteMode === 'skip') {
+      return skip('Remote Control sessions are set to skip routing.', 'skipped (Remote Control sessions are set to skip routing).')
+    }
+
+    armed = { text: e.text, kind, isRemote, automatic: mode === 'auto' || (isRemote && remoteMode === 'auto'), hasImages, waiting: true }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // A turn that starts with routing still undecided (a resumed session, a
+  // notification or a skipped first prompt) closes routing for the session,
+  // unless it is the turn of a first prompt waiting to be routed.
+  on('turn.start', async ($, e, next) => {
+    const undecided = (await read($, routing)) === null
+    if (undecided && isShellTurn(e.text)) {
+      shellTurn = e.turnId
+      return next(e)
+    }
+    if (pending !== null) {
+      await notice($, pending)
+      pending = null
+    }
+    if (undecided && armed?.waiting) {
+      armed = { ...armed, waiting: false }
+      armedTurn = e.turnId
+      return next(e)
+    }
+    if (undecided) await update($, routing, prev => prev ?? { status: 'skipped' as const, applied: null, reason: 'The session was already under way.' })
+    return next(e)
+  })
+
+  // Every main-loop request of the session runs on the choice. Done per request
+  // on purpose: /model would also save the choice as the default for every
+  // future session. Subagents keep their own models. When the person changes
+  // the model (or the effort) themselves, that change wins from then on.
+  on('turn.step', async function* ($, e, next) {
+    // The first prompt's first request: route it, then send it on the choice.
+    if (e.agentId === undefined && armed && e.turnId === armedTurn) {
+      const a = armed
+      // The setting this request carries; its effort is the session's real one.
+      const saved = await readCurrent($)
+      const current: Current = { ...saved, effort: hasEffort(saved.model) ? (asEffort(e.effort) ?? saved.effort) : null }
+      const now = currentLabel(current)
+
+      // Records the decision and notes it under the prompt.
+      const decide = async (value: Routing, text: string, statusLine?: string, logged: Record<string, unknown> = {}) => {
+        armed = armedTurn = null
+        await update($, routing, prev => prev ?? value)
+        await log($, { origin: a.kind, excerpt: a.text.slice(0, 200), status: value.status, reason: value.reason, ...logged })
         $.ui.status(statusLine)
-        pending = text
-        return next(sent)
+        await notice($, text)
       }
-      const skipped = (reason: string): Routing => ({ status: 'skipped', applied: null, reason })
       const kept = (reason: string): Routing => ({ status: 'kept', applied: null, reason })
 
-      const typed = e.text.trimStart()
-      if (prefix && typed.startsWith(prefix) && typed.slice(prefix.length).trim() !== '') {
-        const text = typed.slice(prefix.length).trimStart()
-        return decide(skipped(`Bypassed with ${prefix}.`), `skipped for this session (${prefix} prefix).`, undefined, {}, { ...e, text })
-      }
-      if (isRemote && remoteMode === 'skip') {
-        return decide(skipped('Remote Control sessions are set to skip routing.'), 'skipped (Remote Control sessions are set to skip routing).')
-      }
-
-      const current = await readCurrent($)
-      const now = currentLabel(current)
       $.ui.status('routing…')
       // A refused request (a router model that isn't allowed, say) rejects.
       const reply = await $.model
         .complete(
-        {
-          model: routerModel,
-          system: await readSkill($),
-          prompt: routerInput({
-            prompt: e.text,
-            current,
-            cwd: await $.session.cwd(),
-            style,
-            hasImages: (e.attachments ?? []).some(a => a.type === 'image'),
-            preferences: [],
-            models: allowed,
-          }),
-          effort: routerEffort,
-          maxTokens: 1024,
-          timeoutMs,
-        },
-        { signal: next.signal },
-      )
+          {
+            model: routerModel,
+            system: await readSkill($),
+            prompt: routerInput({ prompt: a.text, current, cwd: await $.session.cwd(), style, hasImages: a.hasImages, preferences: [], models: allowed }),
+            effort: routerEffort,
+            maxTokens: 1024,
+            timeoutMs,
+          },
+          { signal: next.signal },
+        )
         .catch((err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 120))
+      // Esc while routing cancels the turn; the prompt is routed again when it's resent.
+      if (next.signal.aborted) {
+        $.ui.status(undefined)
+        return yield* next(e)
+      }
       const parsed = typeof reply !== 'string' && reply.isAnswered ? parseRec(reply.text) : null
       const rec = parsed && restrict(parsed, allowed)
       const why = rec ? ` Why: ${rec.reason}` : ''
@@ -347,27 +376,29 @@ export const register: Register = (on, options) => {
                 : reply.reason === 'api-error'
                   ? `${reply.error}${reply.status ? `, HTTP ${reply.status}` : ''}`
                   : reply.reason
-        return decide(skipped(`Router unavailable (${failure}).`), `unavailable (${failure}); this session stays on ${now}.`)
+        await decide({ status: 'skipped', applied: null, reason: `Router unavailable (${failure}).` }, `unavailable (${failure}); this session stays on ${now}.`)
+        return yield* next(e)
       }
       const suggested = rec.family === 'keep' ? `keeping ${now}` : label(rec.family, rec.effort)
 
       if (mode === 'shadow') {
         const would = rec.family === 'keep' ? 'keep the current model' : `pick ${suggested}`
-        return decide(kept(`Shadow mode: would ${would}. ${rec.reason}`), `shadow mode, would ${would}; staying on ${now}.${why}`)
+        await decide(kept(`Shadow mode: would ${would}. ${rec.reason}`), `shadow mode, would ${would}; staying on ${now}.${why}`)
+        return yield* next(e)
       }
 
       const opts = pickerOptions(rec, current)
       // A picker with one choice would only be padded with Yes/No.
-      const askAnyway = !automatic && options.askIfSame === true && opts.length > 1
-      if (!askAnyway && isSame(rec, current)) {
-        const same = rec.family === 'keep' ? 'no reason to switch' : 'its pick is the current setting'
-        return decide(kept(rec.reason), `staying on ${now} (${same}).${why}`)
-      }
-
+      const askAnyway = !a.automatic && options.askIfSame === true && opts.length > 1
       let choice: Choice = null
       let answer: string | null = null
       let resolved: Choice | 'unrecognized' | 'failed' = null
-      if (automatic) {
+      if (!askAnyway && isSame(rec, current)) {
+        const same = rec.family === 'keep' ? 'no reason to switch' : 'its pick is the current setting'
+        await decide(kept(rec.reason), `staying on ${now} (${same}).${why}`)
+        return yield* next(e)
+      }
+      if (a.automatic) {
         choice = rec.family === 'keep' ? null : { family: rec.family, effort: rec.effort }
       } else {
         const fastNote = rec.family !== 'keep' && rec.family !== 'opus' && (await fastModeOn($)) ? ' Fast mode only applies to Opus.' : ''
@@ -382,12 +413,16 @@ export const register: Register = (on, options) => {
         } catch {
           // Esc, or the surface couldn't show the picker: keep the current model.
         }
+        if (next.signal.aborted) {
+          $.ui.status(undefined)
+          return yield* next(e)
+        }
       }
 
       if (choice === null || isCurrent(choice, current)) {
         const how =
           answer === null
-            ? automatic
+            ? a.automatic
               ? 'nothing to apply'
               : 'picker dismissed'
             : resolved === 'unrecognized'
@@ -397,54 +432,17 @@ export const register: Register = (on, options) => {
                 : 'you kept it'
         // Under askIfSame the suggestion was to keep it, so there is no other pick to name.
         const suggestion = isSame(rec, current) ? '' : `; it suggested ${suggested}`
-        return decide(kept(rec.reason), `staying on ${now} (${how}${suggestion}).${why}`, undefined, { answer })
+        await decide(kept(rec.reason), `staying on ${now} (${how}${suggestion}).${why}`, undefined, { answer })
+        return yield* next(e)
       }
 
       const applied = { family: choice.family, model: LATEST[choice.family].id, effort: choice.effort }
       const picked = label(choice.family, choice.effort)
       const how =
-        answer === null ? (isRemote && mode !== 'auto' ? 'applied automatically over Remote Control' : 'applied automatically') : picked === suggested ? 'recommended' : `your pick; it suggested ${suggested}`
-      return decide(
-        { status: 'routed', applied, reason: rec.reason },
-        `this session runs on ${picked} (${how}; was ${now}).${why}`,
-        `→ ${picked}`,
-        { answer, applied },
-      )
-    } finally {
-      busy = false
+        answer === null ? (a.isRemote && mode !== 'auto' ? 'applied automatically over Remote Control' : 'applied automatically') : picked === suggested ? 'recommended' : `your pick; it suggested ${suggested}`
+      await decide({ status: 'routed', applied, reason: rec.reason }, `this session runs on ${picked} (${how}; was ${now}).${why}`, `→ ${picked}`, { answer, applied })
     }
-  }).catch(($, e, next) => {
-    // Never eat the prompt: any failure sends it on the current model.
-    $.ui.status(undefined)
-    return next(e)
-  })
 
-  // A turn that starts with routing still undecided (a resumed session, a
-  // notification or a skipped first prompt) closes routing for the session.
-  on('turn.start', async ($, e, next) => {
-    const undecided = (await read($, routing)) === null
-    if (undecided && isShellTurn(e.text)) {
-      shellTurn = e.turnId
-      return next(e)
-    }
-    // The turn of a prompt cancelled while routing.
-    if (cancelled) {
-      cancelled = false
-      return next(e)
-    }
-    if (pending !== null) {
-      await notice($, pending)
-      pending = null
-    }
-    if (undecided) await update($, routing, prev => prev ?? { status: 'skipped' as const, applied: null, reason: 'The session was already under way.' })
-    return next(e)
-  })
-
-  // Every main-loop request of the session runs on the choice. Done per request
-  // on purpose: /model would also save the choice as the default for every
-  // future session. Subagents keep their own models. When the person changes
-  // the model (or the effort) themselves, that change wins from then on.
-  on('turn.step', async function* ($, e, next) {
     const r = await read($, routing)
     const applied = r?.status === 'routed' && r.override !== 'model' && r.override !== 'auto' ? r.applied : null
     if (!r || !applied || e.agentId !== undefined) return yield* next(e)

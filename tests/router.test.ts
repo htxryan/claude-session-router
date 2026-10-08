@@ -14,12 +14,18 @@ const SONNET_PICK = JSON.stringify({
   alternative: { model: 'opus', effort: 'low', why: 'stronger model, similar cost' },
 })
 
-type Env = { reading?: string; reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; replies?: number; fast?: boolean; rows?: string[]; whileAsking?: ($: any) => Promise<void> }
+// `effort`: what the session's requests carry, as Claude Code resolves it
+// (`claude --effort` and the desktop app's picker included). Left out, the
+// first request carries none and the plugin reads the effort from settings.
+// `stop`: the stop reason of the nth request (1-based), end_turn otherwise.
+type Env = { reading?: string; reply?: string | null; answer?: string; origin?: string; surfaces?: string[]; turns?: number; model?: string; effort?: string; replies?: number; fast?: boolean; rows?: string[]; stop?: (n: number) => string | null; whileAsking?: ($: any) => Promise<void> }
 
 // Stands in for the engine beneath the plugin: the session, the router's
 // completion and the picker.
 function engine(on: On, env: Env = {}) {
-  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[], routerInputs: [] as string[], logs: [] as string[], readings: [] as string[] }
+  const calls = { router: 0, asked: [] as string[], options: [] as string[][], skillReads: [] as string[], routerInputs: [] as string[], logs: [] as string[], readings: [] as string[], steps: [] as string[] }
+  active = env
+  turnNo = 0
   mock.store(on)
   mock.clock(on)
   const value = <T>(v: T) => ({ value: v }) as never
@@ -66,11 +72,36 @@ function engine(on: On, env: Env = {}) {
   on('config.list', () => value(env.fast ? [{ key: 'fast', value: true }] : []))
   on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context, origin: e.origin }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }) as never)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+  // Each request as sent: "model:effort", or "model:effort@agent" for a subagent's.
+  on('turn.step', async function* (_$, e) {
+    calls.steps.push(`${e.model}:${String(e.effort)}${e.agentId ? `@${e.agentId}` : ''}`)
+    const stopReason = env.stop ? env.stop(calls.steps.length) : 'end_turn'
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason, usage: null } as never
+  })
+  on('turn.complete', () => ({ text: '' }) as never)
   return calls
 }
+let active: Env = {}
+let turnNo = 0
 
-const submit = ($: any, text: string, origin = 'composer') =>
-  $.prompt.submit({ text, wait: false, origin: { kind: origin } })
+// A prompt handed to Claude Code, without the turn it starts.
+const send = ($: any, text: string, origin = 'composer') => $.prompt.submit({ text, wait: false, origin: { kind: origin } })
+
+// One more request in a turn, on the session's own model and effort unless given.
+const request = async ($: any, turnId: string, index: number, over: Record<string, unknown> = {}) => {
+  const it = $.turn.step({ turnId, index, model: active.model ?? 'claude-opus-5-5', effort: active.effort, messageCount: 1, ...over })
+  for await (const _ of it) {}
+}
+
+// A prompt and the turn it starts, up to its first request: where routing happens.
+const submit = async ($: any, text: string, origin = 'composer') => {
+  const sent = await send($, text, origin)
+  const turnId = `t${++turnNo}`
+  await $.turn.start({ text: sent.text, turnId })
+  await request($, turnId, 0)
+  return sent
+}
 
 // What /session-router:explain reports: the plugin's own read of its routing state.
 const routerSays = async ($: any): Promise<string> =>
@@ -203,9 +234,6 @@ describe('excluded models', () => {
 describe('routing a session', () => {
   test('routes the first prompt after the person picks, then rewrites main-loop requests', async ($, on) => {
     const calls = engine(on)
-    on('turn.step', async function* (_$, e) {
-      return { stopReason: 'end_turn', model: e.model, effort: e.effort } as never
-    })
     const sent = await submit($, 'Add a --dry-run flag to scripts/sync.py')
     expect(sent.text).toBe('Add a --dry-run flag to scripts/sync.py')
     expect(calls.router).toBe(1)
@@ -213,35 +241,22 @@ describe('routing a session', () => {
     expect(calls.asked[0]).not.toMatch(/\?$/)
     expect(calls.options[0]).toEqual(['Sonnet 5.5 · medium (Recommended)', 'Opus 5.5 · low — stronger model, similar cost', 'Keep Opus 5.5 · high (current)'])
     expect(await routerSays($)).toMatch(/^Routed to Sonnet 5\.5 · medium\./)
+    expect(calls.steps).toEqual(['claude-sonnet-5-5:medium']) // the routed prompt's own first request
   })
 
   test('main-loop requests run on the choice; subagent requests keep theirs', async ($, on) => {
-    engine(on)
-    const seen: { model: string; effort?: unknown; agentId?: string }[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push({ model: e.model, effort: e.effort, agentId: e.agentId })
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
-    })
+    const calls = engine(on, { effort: 'xhigh' })
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
-    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    await drain({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'xhigh', messageCount: 1 })
-    await drain({ turnId: 't1', index: 1, model: 'claude-haiku-4-5', messageCount: 1, agentId: 'a1' })
-    expect(seen[0]).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium', agentId: undefined })
-    expect(seen[1]!.model).toBe('claude-haiku-4-5')
+    await request($, 't1', 1)
+    await request($, 't1', 2, { model: 'claude-haiku-4-5', effort: undefined, agentId: 'a1' })
+    expect(calls.steps).toEqual(['claude-sonnet-5-5:medium', 'claude-sonnet-5-5:medium', 'claude-haiku-4-5:undefined@a1'])
   })
 
   test('a Haiku pick runs on Haiku 5.5 at its effort', { options: { mode: 'auto' } }, async ($, on) => {
-    engine(on, { reply: JSON.stringify({ model: 'haiku', effort: 'low', reason: 'A quick lookup.', alternative: null }) })
-    const seen: string[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push(`${e.model}:${String(e.effort)}`)
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
-    })
+    const calls = engine(on, { reply: JSON.stringify({ model: 'haiku', effort: 'low', reason: 'A quick lookup.', alternative: null }), effort: 'high' })
     await submit($, 'Where is parseRec defined?')
     expect(await routerSays($)).toMatch(/^Routed to Haiku 5\.5 · low\./)
-    const it = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 } as never)
-    for await (const _ of it) {}
-    expect(seen).toEqual(['claude-haiku-5-5:low'])
+    expect(calls.steps).toEqual(['claude-haiku-5-5:low'])
   })
 
   test('only the first prompt routes', async ($, on) => {
@@ -252,7 +267,6 @@ describe('routing a session', () => {
 
   test('never routes once a turn has started, even after a notification-led first turn', async ($, on) => {
     const calls = engine(on)
-    on('turn.start', (_$, e) => ({ turnId: e.turnId }))
     await $.turn.start({ text: '', turnId: 't0' })
     await submit($, 'Add a --dry-run flag')
     expect(calls.router).toBe(0)
@@ -321,7 +335,7 @@ describe('routing a session', () => {
 
   test('auto mode routes headless runs, but not notifications', { options: { mode: 'auto' } }, async ($, on) => {
     const calls = engine(on, { surfaces: [] })
-    await submit($, 'task finished', 'task-notification')
+    await send($, 'task finished', 'task-notification')
     expect(calls.router).toBe(0)
     await submit($, 'run the report', 'sdk')
     expect(calls.router).toBe(1)
@@ -378,55 +392,39 @@ describe('routing a session', () => {
   })
 
   test('changing the effort ends only the effort part of the switch; changing the model ends all of it', async ($, on) => {
-    const env: Env = {}
-    engine(on, env)
-    const seen: { model: string; effort?: unknown }[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push({ model: e.model, effort: e.effort })
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
-    })
+    const env: Env = { effort: 'high' }
+    const calls = engine(on, env)
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
-    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
-    await drain(step)
-    expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium' })
-    await drain({ ...step, effort: 'low' }) // /effort low
-    expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' })
+    expect(calls.steps.at(-1)).toBe('claude-sonnet-5-5:medium')
+    await request($, 't1', 1, { effort: 'low' }) // /effort low
+    expect(calls.steps.at(-1)).toBe('claude-sonnet-5-5:low')
     expect(await routerSays($)).toMatch(/the model switch still applies/)
-    await drain({ ...step, model: 'claude-haiku-4-5', effort: 'low' }) // a fallback for one request goes as it is
-    expect(seen.at(-1)!.model).toBe('claude-haiku-4-5')
-    await drain({ ...step, effort: 'low' })
-    expect(seen.at(-1)!.model).toBe('claude-sonnet-5-5')
+    await request($, 't1', 2, { model: 'claude-haiku-4-5', effort: 'low' }) // a fallback for one request goes as it is
+    expect(calls.steps.at(-1)).toBe('claude-haiku-4-5:low')
+    await request($, 't1', 3, { effort: 'low' })
+    expect(calls.steps.at(-1)).toBe('claude-sonnet-5-5:low')
     env.model = 'claude-opus-4-8'
-    await drain({ ...step, model: 'claude-opus-4-8', effort: 'low' }) // /model
-    expect(seen.at(-1)).toEqual({ model: 'claude-opus-4-8', effort: 'low' })
-    await drain({ ...step, model: 'claude-opus-4-8', effort: 'low' })
-    expect(seen.at(-1)!.model).toBe('claude-opus-4-8')
+    await request($, 't1', 4, { effort: 'low' }) // /model
+    expect(calls.steps.at(-1)).toBe('claude-opus-4-8:low')
+    await request($, 't1', 5, { effort: 'low' })
+    expect(calls.steps.at(-1)).toBe('claude-opus-4-8:low')
     expect(await routerSays($)).toMatch(/switch has ended/)
   })
 
   test('opening /model and pressing Esc keeps the switch; picking the original model ends it', async ($, on) => {
-    const env: Env = { rows: ['Add a --dry-run flag'] }
-    engine(on, env)
-    const seen: string[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push(e.model)
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
-    })
+    const env: Env = { rows: ['Add a --dry-run flag'], effort: 'high' }
+    const calls = engine(on, env)
     on('command.run', () => ({ text: '' }) as never)
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
-    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
     const run = (command: string) => $.command.run({ command, args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
-    await drain(step)
     await run('model')
     env.rows!.push('<local-command-stdout>Kept model as Opus 5.5</local-command-stdout>')
-    await drain(step)
-    expect(seen.at(-1)).toBe('claude-sonnet-5-5')
+    await request($, 't1', 1)
+    expect(calls.steps.at(-1)).toBe('claude-sonnet-5-5:medium')
     await run('model')
     env.rows!.push('<local-command-stdout>Set model to `Opus 5.5` for this session only</local-command-stdout>')
-    await drain(step)
-    expect(seen.at(-1)).toBe('claude-opus-5-5')
+    await request($, 't1', 2)
+    expect(calls.steps.at(-1)).toBe('claude-opus-5-5:high')
   })
 
   test('ask-if-same asks even when the router would keep the current model', { options: { askIfSame: true } }, async ($, on) => {
@@ -449,8 +447,6 @@ describe('routing a session', () => {
     const env: Env = {}
     const calls = engine(on, env)
     env.turns = 2 // /effort adds transcript rows, but the model hasn't replied
-    on('turn.start', (_$, e) => ({ turnId: e.turnId }))
-    on('turn.complete', () => ({ text: '' }) as never)
     await $.turn.start({ text: '<bash-stdout>hi</bash-stdout><bash-stderr></bash-stderr>', turnId: 'sh' })
     env.replies = 1 // the model answered the shell output
     await $.turn.complete({ turnId: 'sh', reason: 'end_turn', text: 'ok', answer: 'ok' } as never)
@@ -485,7 +481,6 @@ describe('routing a session', () => {
 
   test('says so when another model answered the first routed turn', async ($, on) => {
     const calls = engine(on)
-    on('turn.complete', () => ({ text: '' }) as never)
     await submit($, 'Add a --dry-run flag')
     const done = { turnId: 't1', reason: 'end_turn', text: 'ok', answer: 'ok' }
     await $.turn.complete({ ...done, usage: { model: 'claude-opus-4-8' } } as never)
@@ -494,23 +489,15 @@ describe('routing a session', () => {
   })
 
   test('a model picked before the first prompt does not end the switch later', async ($, on) => {
-    const env: Env = { rows: [] }
-    engine(on, env)
-    const seen: string[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push(e.model)
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
-    })
+    const env: Env = { rows: [], effort: 'high' }
+    const calls = engine(on, env)
     on('command.run', () => ({ text: '' }) as never)
     await $.command.run({ command: 'model', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
     env.rows!.push('<local-command-stdout>Set model to `Opus 5.5` for this session only</local-command-stdout>')
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
     env.rows!.push('Add a --dry-run flag to scripts/sync.py')
-    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
-    await drain(step)
-    await drain({ ...step, index: 1 })
-    expect(seen).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
+    await request($, 't1', 1)
+    expect(calls.steps).toEqual(['claude-sonnet-5-5:medium', 'claude-sonnet-5-5:medium'])
   })
 
   test('a router request that is refused skips routing and says why', async ($, on) => {
@@ -530,7 +517,7 @@ describe('routing a session', () => {
     expect(calls.router).toBe(2)
   })
 
-  test('a second first prompt while the first is being routed is not routed', async ($, on) => {
+  test('a second first prompt before the first one\'s turn is routed once', async ($, on) => {
     const calls = engine(on)
     await Promise.all([submit($, 'Add a --dry-run flag'), submit($, 'Something else', 'bridge')])
     expect(calls.router).toBe(1)
@@ -544,57 +531,33 @@ describe('routing a session', () => {
   })
 
   test('a refused request is retried as Claude Code sends it', async ($, on) => {
-    engine(on)
-    const seen: string[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push(e.model)
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: seen.length === 1 ? 'refusal' : 'end_turn', usage: null } as never
-    })
+    const calls = engine(on, { effort: 'high', stop: n => (n === 1 ? 'refusal' : 'end_turn') })
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
-    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
-    await drain(step)
-    await drain(step) // the retry, on the session's own model
-    await drain({ ...step, index: 1 })
-    expect(seen).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
+    await request($, 't1', 0) // the retry, on the session's own model
+    await request($, 't1', 1)
+    expect(calls.steps).toEqual(['claude-sonnet-5-5:medium', 'claude-opus-5-5:high', 'claude-sonnet-5-5:medium'])
   })
 
   test('a fallback request keeps the routed effort for later requests', async ($, on) => {
-    engine(on)
-    const seen: { model: string; effort?: unknown }[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push({ model: e.model, effort: e.effort })
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null } as never
-    })
+    const calls = engine(on, { effort: 'high' })
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
-    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
-    await drain(step)
-    await drain({ ...step, index: 1, model: 'claude-haiku-4-5', effort: undefined })
-    await drain({ ...step, index: 2 })
-    expect(seen.at(-1)).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium' })
+    await request($, 't1', 1, { model: 'claude-haiku-4-5', effort: undefined })
+    await request($, 't1', 2)
+    expect(calls.steps.at(-1)).toBe('claude-sonnet-5-5:medium')
   })
 
   test('opening /model again before the first pick was read still ends the switch', async ($, on) => {
-    const env: Env = { rows: ['Add a --dry-run flag'] }
-    engine(on, env)
-    const seen: string[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push(e.model)
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null } as never
-    })
+    const env: Env = { rows: ['Add a --dry-run flag'], effort: 'high' }
+    const calls = engine(on, env)
     on('command.run', () => ({ text: '' }) as never)
     await submit($, 'Add a --dry-run flag to scripts/sync.py')
-    const drain = async (e: any) => { const it = $.turn.step(e); for await (const _ of it) {} }
-    const step = { turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 }
     const run = (command: string) => $.command.run({ command, args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
-    await drain(step)
     await run('model')
     env.rows!.push('<local-command-stdout>Set model to `Opus 5.5` for this session only</local-command-stdout>')
     await run('model')
     env.rows!.push('<local-command-stdout>Kept model as Opus 5.5</local-command-stdout>')
-    await drain({ ...step, turnId: 't2' })
-    expect(seen.at(-1)).toBe('claude-opus-5-5')
+    await request($, 't2', 0)
+    expect(calls.steps.at(-1)).toBe('claude-opus-5-5:high')
   })
 
   test('a resumed session is not routed, even with no replies left after compaction', async ($, on) => {
@@ -621,17 +584,10 @@ describe('routing a session', () => {
   })
 
   test('an answer the person typed is read by the router model', async ($, on) => {
-    const calls = engine(on, { answer: 'not opus, sonnet but low', reading: '{"model":"sonnet","effort":"low"}' })
-    const seen: string[] = []
-    on('turn.step', async function* (_$, e) {
-      seen.push(`${e.model}:${String(e.effort)}`)
-      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null } as never
-    })
+    const calls = engine(on, { answer: 'not opus, sonnet but low', reading: '{"model":"sonnet","effort":"low"}', effort: 'high' })
     await submit($, 'Add a --dry-run flag')
     expect(JSON.parse(calls.readings[0]!).answer).toBe('not opus, sonnet but low')
-    const it = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 } as never)
-    for await (const _ of it) {}
-    expect(seen).toEqual(['claude-sonnet-5-5:low'])
+    expect(calls.steps).toEqual(['claude-sonnet-5-5:low'])
   })
 
   test('a typed answer that cannot be read keeps the current model', async ($, on) => {
@@ -648,11 +604,51 @@ describe('routing a session', () => {
     expect(await routerSays($)).toMatch(/^Kept the current model/)
   })
 
-  test('a pick made after another turn started the session is not applied', async ($, on) => {
-    const outer = $ as any
-    engine(on, { whileAsking: async () => void (await outer.turn.start({ turnId: 'phone', text: 'from the phone' })) })
-    on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
-    await submit($, 'Add a --dry-run flag')
-    expect(await routerSays($)).toMatch(/already under way/)
+  // `claude --effort xhigh` or the desktop app's picker: settings say high,
+  // the request says xhigh, and the request is what counts.
+  describe('with an effort set outside settings', () => {
+    const notes = (calls: { logs: string[] }) => calls.logs.filter(l => /^(staying on|this session runs on)/.test(l))
+
+    test('the router, the picker and the note see the real effort', async ($, on) => {
+      const calls = engine(on, { effort: 'xhigh' })
+      await submit($, 'Add a --dry-run flag')
+      expect(JSON.parse(calls.routerInputs[0]!).current).toEqual({ model: 'claude-opus-5-5', effort: 'xhigh' })
+      expect(calls.options[0]!.at(-1)).toBe('Keep Opus 5.5 · xhigh (current)')
+      expect(notes(calls)[0]).toMatch(/\(recommended; was Opus 5\.5 · xhigh\)/)
+    })
+
+    test('a keep names the real effort', async ($, on) => {
+      const calls = engine(on, { effort: 'xhigh', reply: JSON.stringify({ model: 'keep', effort: null, reason: 'Just a greeting.', alternative: null }) })
+      await submit($, 'hello')
+      expect(notes(calls)).toEqual(['staying on Opus 5.5 · xhigh (no reason to switch). Why: Just a greeting.'])
+      expect(calls.steps).toEqual(['claude-opus-5-5:xhigh'])
+    })
+
+    test('a pick of the saved effort is a change, so it asks', async ($, on) => {
+      const calls = engine(on, { effort: 'xhigh', reply: JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits.', alternative: null }) })
+      await submit($, 'Fix the pagination bug')
+      expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 5.5 · xhigh (current)'])
+      expect(calls.steps).toEqual(['claude-opus-5-5:high'])
+    })
+
+    test('a pick of the real effort is the current setting, so it does not ask', async ($, on) => {
+      const calls = engine(on, { effort: 'xhigh', reply: JSON.stringify({ model: 'opus', effort: 'xhigh', reason: 'Hard.', alternative: null }) })
+      await submit($, 'Fix the race in the scheduler')
+      expect(calls.asked.length).toBe(0)
+      expect(notes(calls)).toEqual(['staying on Opus 5.5 · xhigh (its pick is the current setting). Why: Hard.'])
+      expect(calls.steps).toEqual(['claude-opus-5-5:xhigh'])
+    })
+  })
+
+  // Esc while routing cancels the turn (checked live: the testing kit can't
+  // abort a turn); the prompt is resent, maybe edited, and that is routed.
+  test('a first prompt cancelled before routing is routed as resent', async ($, on) => {
+    const calls = engine(on, { effort: 'high' })
+    await send($, 'Add a --dry-run flag')
+    expect(await routerSays($)).toMatch(/^Not routed yet/)
+    await submit($, 'Add a --dry-run flag to scripts/sync.py')
+    expect(calls.router).toBe(1)
+    expect(JSON.parse(calls.routerInputs[0]!).prompt).toBe('Add a --dry-run flag to scripts/sync.py')
+    expect(await routerSays($)).toMatch(/^Routed to Sonnet 5\.5 · medium\./)
   })
 })

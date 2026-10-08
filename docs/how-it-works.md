@@ -12,7 +12,10 @@ sequenceDiagram
     You->>CC: First prompt (new session or after /clear)
     CC->>Mod: prompt.submit hook
     Mod->>Mod: A person typed it, no turns yet, nothing routed yet?
-    Mod->>Opus: choose-model skill + the prompt, current model, style
+    Mod->>CC: next(e): the prompt goes on unchanged, marked to route
+    CC->>Mod: turn.step hook: the turn's first model request, before it is sent
+    Note over Mod: The request carries the session's real effort, which plugins can't see earlier when claude --effort or the desktop app's picker set it
+    Mod->>Opus: choose-model skill + the prompt, current model and effort, style
     Opus-->>Mod: { model, effort, reason, alternative }
     alt Already on the pick (same model and effort)
         Mod->>Mod: Keep the current model without asking
@@ -20,14 +23,12 @@ sequenceDiagram
         Mod->>Mod: Apply the pick without asking
     else
         Mod->>You: Picker: Recommended / Alternative / Keep current / Other
-        You-->>Mod: Choice (Esc keeps the current model)
+        You-->>Mod: Choice (Esc keeps the current model; Esc while routing cancels the prompt)
     end
-    Mod->>CC: next(e): the prompt goes on unchanged
-    CC->>Mod: turn.start
     Mod->>You: Notice line under the prompt: what was picked and why
-    loop Every main-loop model request this session
-        CC->>Mod: turn.step hook
+    loop That request and every later main-loop request this session
         Mod->>CC: next({ ...e, model, effort })
+        CC->>Mod: turn.step hook
     end
     Note over Mod,CC: Never runs /model: it would save the pick as your default for every future session
 ```
