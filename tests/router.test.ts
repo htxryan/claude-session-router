@@ -135,13 +135,13 @@ describe('pick logic', () => {
     expect(opts.map(o => o.label)).toEqual([
       'Sonnet 5.5 · medium (Recommended)',
       'Opus 5.5 · low — stronger model, similar cost',
-      'Keep Opus 5.5 · xhigh (current)',
+      'Keep Opus 5.5 · xhigh (Current)',
     ])
     const haikuFirst = options(parseRec('{"model":"haiku","reason":"quick","alternative":{"model":"opus","why":"safer"}}')!, OPUS_XHIGH)
     expect(haikuFirst.map(o => o.label)).toEqual([
       'Haiku 5.5 · medium (Recommended)',
       'Opus 5.5 · medium — safer',
-      'Keep Opus 5.5 · xhigh (current)',
+      'Keep Opus 5.5 · xhigh (Current)',
     ])
     const sonnetHigh = parseRec('{"model":"sonnet","effort":"high","reason":"x"}')!
     const read = (model: string, effort: string | null = null) => parseAnswer(JSON.stringify({ model, effort }), sonnetHigh, OPUS_XHIGH)
@@ -225,7 +225,7 @@ describe('excluded models', () => {
     const reply = JSON.stringify({ ...JSON.parse(FABLE_PICK), alternative: { model: 'sonnet', effort: 'high', why: 'faster' } })
     const calls = engine(on, { reply })
     await submit($, 'Port this C library to Rust overnight')
-    expect(calls.options[0]).toEqual(['Sonnet 5.5 · high (Recommended)', 'Keep Opus 5.5 · high (current)'])
+    expect(calls.options[0]).toEqual(['Sonnet 5.5 · high (Recommended)', 'Keep Opus 5.5 · high (Current)'])
     expect(calls.asked[0]).toMatch(/Fable 5\.1 is excluded in your settings/)
     expect(calls.routerInputs[0]).toMatch(/"models": \[\s*"opus",\s*"sonnet",\s*"haiku"\s*\]/)
   })
@@ -239,7 +239,7 @@ describe('routing a session', () => {
     expect(calls.router).toBe(1)
     expect(calls.skillReads[0]).toMatch(/skills\/choose-model\/SKILL\.md$/)
     expect(calls.asked[0]).not.toMatch(/\?$/)
-    expect(calls.options[0]).toEqual(['Sonnet 5.5 · medium (Recommended)', 'Opus 5.5 · low — stronger model, similar cost', 'Keep Opus 5.5 · high (current)'])
+    expect(calls.options[0]).toEqual(['Sonnet 5.5 · medium (Recommended)', 'Opus 5.5 · low — stronger model, similar cost', 'Keep Opus 5.5 · high (Current)'])
     expect(await routerSays($)).toMatch(/^Routed to Sonnet 5\.5 · medium\./)
     expect(calls.steps).toEqual(['claude-sonnet-5-5:medium']) // the routed prompt's own first request
   })
@@ -280,7 +280,7 @@ describe('routing a session', () => {
   })
 
   test('keeping the current model sends the prompt without switching', async ($, on) => {
-    engine(on, { answer: 'Keep Opus 5.5 · high (current)' })
+    engine(on, { answer: 'Keep Opus 5.5 · high (Current)' })
     await submit($, 'Add a --dry-run flag')
     expect(await routerSays($)).toMatch(/^Kept the current model/)
   })
@@ -295,7 +295,7 @@ describe('routing a session', () => {
   test('a pick one effort level away still asks', async ($, on) => {
     const calls = engine(on, { reply: JSON.stringify({ model: 'opus', effort: 'xhigh', reason: 'Tricky.', alternative: null }) })
     await submit($, 'Design the sync protocol')
-    expect(calls.options[0]).toEqual(['Opus 5.5 · xhigh (Recommended)', 'Keep Opus 5.5 · high (current)'])
+    expect(calls.options[0]).toEqual(['Opus 5.5 · xhigh (Recommended)', 'Keep Opus 5.5 · high (Current)'])
   })
 
   test('a router failure falls through to the current model', async ($, on) => {
@@ -440,7 +440,7 @@ describe('routing a session', () => {
     const reply = JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits Opus.', alternative: null })
     const calls = engine(on, { reply, model: 'claude-opus-4-8' })
     await submit($, 'Design the sync protocol')
-    expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 4.8 · xhigh (current)'])
+    expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 4.8 · xhigh (Current)'])
   })
 
   test('local commands and shell commands before the first prompt do not stop routing', async ($, on) => {
@@ -470,7 +470,7 @@ describe('routing a session', () => {
   test('a top-level effortLevel applies to models before Opus 5.5', async ($, on) => {
     const calls = engine(on, { model: 'claude-fable-5-1' })
     await submit($, 'Add a --dry-run flag')
-    expect(calls.options[0]).toContain('Keep Fable 5.1 · xhigh (current)')
+    expect(calls.options[0]).toContain('Keep Fable 5.1 · xhigh (Current)')
   })
 
   test('with fast mode on, a non-Opus pick says fast mode only applies to Opus', async ($, on) => {
@@ -598,7 +598,7 @@ describe('routing a session', () => {
   })
 
   test('picking an option is not sent to the router model', async ($, on) => {
-    const calls = engine(on, { answer: 'Keep Opus 5.5 · high (current)' })
+    const calls = engine(on, { answer: 'Keep Opus 5.5 · high (Current)' })
     await submit($, 'Add a --dry-run flag')
     expect(calls.readings.length).toBe(0)
     expect(await routerSays($)).toMatch(/^Kept the current model/)
@@ -613,7 +613,7 @@ describe('routing a session', () => {
       const calls = engine(on, { effort: 'xhigh' })
       await submit($, 'Add a --dry-run flag')
       expect(JSON.parse(calls.routerInputs[0]!).current).toEqual({ model: 'claude-opus-5-5', effort: 'xhigh' })
-      expect(calls.options[0]!.at(-1)).toBe('Keep Opus 5.5 · xhigh (current)')
+      expect(calls.options[0]!.at(-1)).toBe('Keep Opus 5.5 · xhigh (Current)')
       expect(notes(calls)[0]).toMatch(/\(recommended; was Opus 5\.5 · xhigh\)/)
     })
 
@@ -627,7 +627,7 @@ describe('routing a session', () => {
     test('a pick of the saved effort is a change, so it asks', async ($, on) => {
       const calls = engine(on, { effort: 'xhigh', reply: JSON.stringify({ model: 'opus', effort: 'high', reason: 'Fits.', alternative: null }) })
       await submit($, 'Fix the pagination bug')
-      expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 5.5 · xhigh (current)'])
+      expect(calls.options[0]).toEqual(['Opus 5.5 · high (Recommended)', 'Keep Opus 5.5 · xhigh (Current)'])
       expect(calls.steps).toEqual(['claude-opus-5-5:high'])
     })
 
