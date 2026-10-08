@@ -15,7 +15,8 @@
       "prompt": "what's the capital of Australia",
       "accept": {
         "haiku": [
-          null
+          "low",
+          "medium"
         ],
         "keep": [
           null
@@ -31,7 +32,8 @@
       "prompt": "Give me a regex that matches US ZIP codes, with or without the +4.",
       "accept": {
         "haiku": [
-          null
+          "low",
+          "medium"
         ],
         "sonnet": [
           "low",
@@ -49,7 +51,8 @@
       },
       "accept": {
         "haiku": [
-          null
+          "low",
+          "medium"
         ],
         "sonnet": [
           "low"
@@ -138,7 +141,8 @@
       "prompt": "Read logs/worker.log and tell me which job failed most often yesterday.",
       "accept": {
         "haiku": [
-          null
+          "low",
+          "medium"
         ],
         "sonnet": [
           "low",
@@ -215,7 +219,8 @@
       "prompt": "Plan a week of dinners for two, vegetarian, under 30 minutes each, and make a grocery list.",
       "accept": {
         "haiku": [
-          null
+          "low",
+          "medium"
         ],
         "sonnet": [
           "low",
@@ -285,7 +290,8 @@
       "style": "frugal",
       "accept": {
         "haiku": [
-          null
+          "low",
+          "medium"
         ],
         "sonnet": [
           "low",

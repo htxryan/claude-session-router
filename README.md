@@ -5,7 +5,7 @@
 <p align="center"><strong>The right Claude model and effort for each session.</strong></p>
 <p align="center">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6e7781?style=flat-square&labelColor=30363d">
-  <img alt="Requires Claude Code 2.1.289 or later" src="https://img.shields.io/badge/requires-2.1.289%2B-6e7781?style=flat-square&labelColor=30363d">
+  <img alt="Requires Claude Code 2.1.293 or later" src="https://img.shields.io/badge/requires-2.1.293%2B-6e7781?style=flat-square&labelColor=30363d">
   <img alt="Evals: 100% acceptable picks" src="https://img.shields.io/badge/evals-100%25%20acceptable-6e7781?style=flat-square&labelColor=30363d">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e7781?style=flat-square&labelColor=30363d">
 </p>
@@ -32,7 +32,7 @@ This is an independent plugin, not an Anthropic product.
 
 ## Install
 
-Needs Claude Code 2.1.289 or later.
+Needs Claude Code 2.1.293 or later (the first with Haiku 5.5).
 
 ```
 /plugin marketplace add htxryan/claude-session-router
@@ -90,7 +90,7 @@ The same settings in `settings.json`, with the defaults except for `excludeModel
 
 - **One router call per session:** about 5 seconds and a little of your plan or API credits. A typed answer in the picker adds a short second call.
 - **Fable can cost more:** some plans bill it to usage credits. Exclude it in Settings to never be offered it.
-- **Subagents and compaction follow the original model.** A session routed from 1M-context Opus to Haiku (200k) can hit Haiku's limit before compacting.
+- **Subagents and compaction follow the original model,** not the routed one.
 - **`/effort` is saved as the original model's default.**
 - **`claude --effort` isn't visible to plugins,** so the picker shows your saved effort as current.
 - **A wrong type in `pluginConfigs`** (e.g. `"30000"` for `timeoutMs`) stops the plugin loading, with the error only in the debug log.
@@ -115,7 +115,7 @@ The guidance the skill is built on:
 
 - **Claude docs:** [Models overview](https://platform.claude.com/docs/en/about-claude/models/overview) · [Choosing a model](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model) · [Optimizing for cost and intelligence](https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence) · [Effort](https://platform.claude.com/docs/en/build-with-claude/effort) · Prompting guides for [Fable 5.1](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1), [Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5) and [Sonnet 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5)
 - **Claude Code:** [Model configuration](https://code.claude.com/docs/en/model-config) · [Choosing a Claude model and effort level in Claude Code](https://claude.com/blog/claude-model-and-effort-level-in-claude-code) · [Spending your effort](https://claude.dev/blog/spending-your-effort/) · [What a task costs on Opus 5.5](https://claude.dev/blog/what-a-task-costs-on-opus-5-5/) · [Building with Claude Sonnet 5.5](https://claude.dev/blog/building-with-claude-sonnet-5-5/) · [Opus 5.5 and longer coding sessions](https://claude.com/resources/articles/claude-opus-5-5-built-for-coding-sessions-that-use-more-context)
-- **Announcements:** [Fable 5.1](https://www.anthropic.com/claude-fable-and-mythos-5-1) · [Opus 5.5](https://www.anthropic.com/claude-opus-5-5) · [Sonnet 5.5](https://www.anthropic.com/claude-sonnet-5-5) · [Haiku 4.5](https://www.anthropic.com/news/claude-haiku-4-5)
+- **Announcements:** [Fable 5.1](https://www.anthropic.com/claude-fable-and-mythos-5-1) · [Opus 5.5](https://www.anthropic.com/claude-opus-5-5) · [Sonnet 5.5](https://www.anthropic.com/claude-sonnet-5-5) · [Haiku 5.5](https://www.anthropic.com/claude-haiku-5-5)
 
 ---
 

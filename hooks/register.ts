@@ -10,6 +10,7 @@ import {
   currentLabel,
   defaultEffortOf,
   familyOf,
+  hasEffort,
   ignoresTopLevelEffort,
   isSame,
   isCurrent,
@@ -34,7 +35,7 @@ const routing = atom({ plugin: 'session-router', key: 'routing' } as const, null
 async function readCurrent($: EngineInterface): Promise<Current> {
   const model = await $.session.model()
   const family = familyOf(model)
-  if (family === 'haiku') return { family, model, effort: null }
+  if (!hasEffort(model)) return { family, model, effort: null }
   const settings = await $.settings.read()
   const perModel = (settings.modelSettings ?? {}) as Record<string, { effortLevel?: unknown } | undefined>
   const key = Object.keys(perModel).find(k => model.startsWith(k) || k.startsWith(model.replace(/\[.*\]$/, '')))
@@ -462,7 +463,7 @@ export const register: Register = (on, options) => {
     }
     if (override === 'model') return yield* next(e)
     // The session's effort once the person set one; a session that started on
-    // Haiku has none to give, so the routed one stays.
+    // Haiku 4.5 has none to give, so the routed one stays.
     const effort = applied.effort && (!override || e.effort === undefined) ? { effort: applied.effort } : {}
     const result = yield* next({ ...e, model: applied.model, ...effort })
     if (result.stopReason === 'refusal' || result.stopReason === null) retries.add(step)

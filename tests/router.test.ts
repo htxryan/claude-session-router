@@ -82,7 +82,8 @@ describe('pick logic', () => {
     expect(parseRec('```json\n' + SONNET_PICK + '\n```')?.effort).toBe('medium')
     expect(parseRec('{"model":"gpt","reason":"x"}')).toBe(null)
     expect(parseRec('not json')).toBe(null)
-    expect(parseRec('{"model":"haiku","effort":"high","reason":"quick lookup"}')?.effort).toBe(null)
+    expect(parseRec('{"model":"haiku","effort":"high","reason":"quick lookup"}')?.effort).toBe('high')
+    expect(parseRec('{"model":"haiku","effort":null,"reason":"quick lookup"}')?.effort).toBe('medium') // Haiku 5.5's default
     expect(parseRec('{"model":"Sonnet","effort":"High","reason":"x"}')).toMatchObject({ family: 'sonnet', effort: 'high' })
     expect(parseRec('{"model":"claude-opus-5-5","effort":"x-high","reason":"x"}')).toMatchObject({ family: 'opus', effort: 'xhigh' })
     expect(parseRec('{"model":"Keep","reason":"x"}')?.family).toBe('keep')
@@ -107,7 +108,7 @@ describe('pick logic', () => {
     ])
     const haikuFirst = options(parseRec('{"model":"haiku","reason":"quick","alternative":{"model":"opus","why":"safer"}}')!, OPUS_XHIGH)
     expect(haikuFirst.map(o => o.label)).toEqual([
-      'Haiku 4.5 (Recommended)',
+      'Haiku 5.5 · medium (Recommended)',
       'Opus 5.5 · medium — safer',
       'Keep Opus 5.5 · xhigh (current)',
     ])
@@ -115,7 +116,7 @@ describe('pick logic', () => {
     const read = (model: string, effort: string | null = null) => parseAnswer(JSON.stringify({ model, effort }), sonnetHigh, OPUS_XHIGH)
     expect(read('keep')).toBe(null)
     expect(read('fable', 'max')).toEqual({ family: 'fable', effort: 'max' })
-    expect(read('haiku', 'high')).toEqual({ family: 'haiku', effort: null })
+    expect(read('haiku', 'high')).toEqual({ family: 'haiku', effort: 'high' })
     expect(read('sonnet')).toEqual({ family: 'sonnet', effort: 'high' }) // the recommended effort
     expect(read('keep', 'high')).toEqual({ family: 'opus', effort: 'high' })
     expect(read('Opus', 'x-high')).toEqual({ family: 'opus', effort: 'xhigh' })
@@ -128,7 +129,10 @@ describe('pick logic', () => {
     expect(plainAnswer('Opus high', rec, OPUS_XHIGH)).toEqual({ family: 'opus', effort: 'high' })
     expect(plainAnswer('opus', rec, OPUS_XHIGH)).toEqual({ family: 'opus', effort: 'xhigh' })
     expect(plainAnswer('low', rec, OPUS_XHIGH)).toEqual({ family: 'sonnet', effort: 'low' })
-    expect(plainAnswer('haiku', rec, OPUS_XHIGH)).toEqual({ family: 'haiku', effort: null })
+    expect(plainAnswer('haiku', rec, OPUS_XHIGH)).toEqual({ family: 'haiku', effort: 'medium' })
+    expect(plainAnswer('haiku low', rec, OPUS_XHIGH)).toEqual({ family: 'haiku', effort: 'low' })
+    const haikuRec = parseRec('{"model":"haiku","effort":"low","reason":"x"}')!
+    expect(plainAnswer('medium', haikuRec, OPUS_XHIGH)).toEqual({ family: 'haiku', effort: 'medium' }) // an effort alone applies to Haiku too
     expect(plainAnswer('not opus', rec, OPUS_XHIGH)).toBe(undefined)
     expect(plainAnswer('opus please', rec, OPUS_XHIGH)).toBe(undefined)
   })
@@ -150,6 +154,14 @@ describe('model names', () => {
     expect(defaultEffortOf('claude-opus-4-8')).toBe('high')
     expect(defaultEffortOf('claude-opus-4-7')).toBe('xhigh')
     expect(currentLabel({ family: 'opus', model: 'claude-opus-4-8', effort: 'high' })).toBe('Opus 4.8 · high')
+    // Haiku 5.5 is the first Haiku with effort levels; Haiku 4.5 has none.
+    expect(modelName('claude-haiku-5-5')).toBe('Haiku 5.5')
+    expect(defaultEffortOf('claude-haiku-5-5')).toBe('medium')
+    expect(defaultEffortOf('claude-haiku-4-5-20251001')).toBe(null)
+    expect(currentLabel({ family: 'haiku', model: 'claude-haiku-5-5', effort: 'low' })).toBe('Haiku 5.5 · low')
+    expect(currentLabel({ family: 'haiku', model: 'claude-haiku-4-5', effort: null })).toBe('Haiku 4.5')
+    expect(isSame(parseRec('{"model":"haiku","effort":"low","reason":"x"}')!, { family: 'haiku', model: 'claude-haiku-5-5', effort: 'medium' })).toBe(false)
+    expect(isSame(parseRec('{"model":"haiku","effort":"low","reason":"x"}')!, { family: 'haiku', model: 'claude-haiku-4-5', effort: null })).toBe(false)
     const rec = parseRec('{"model":"opus","effort":"high","reason":"x"}')!
     expect(isSame(rec, { family: 'opus', model: 'claude-opus-4-8', effort: 'high' })).toBe(false)
   })
@@ -216,6 +228,20 @@ describe('routing a session', () => {
     await drain({ turnId: 't1', index: 1, model: 'claude-haiku-4-5', messageCount: 1, agentId: 'a1' })
     expect(seen[0]).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium', agentId: undefined })
     expect(seen[1]!.model).toBe('claude-haiku-4-5')
+  })
+
+  test('a Haiku pick runs on Haiku 5.5 at its effort', { options: { mode: 'auto' } }, async ($, on) => {
+    engine(on, { reply: JSON.stringify({ model: 'haiku', effort: 'low', reason: 'A quick lookup.', alternative: null }) })
+    const seen: string[] = []
+    on('turn.step', async function* (_$, e) {
+      seen.push(`${e.model}:${String(e.effort)}`)
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] } as never
+    })
+    await submit($, 'Where is parseRec defined?')
+    expect(await routerSays($)).toMatch(/^Routed to Haiku 5\.5 · low\./)
+    const it = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 1 } as never)
+    for await (const _ of it) {}
+    expect(seen).toEqual(['claude-haiku-5-5:low'])
   })
 
   test('only the first prompt routes', async ($, on) => {

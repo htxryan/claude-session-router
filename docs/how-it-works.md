@@ -49,10 +49,10 @@ In short, from Anthropic's guidance as of October 2026:
 
 - **Opus 5.5 · medium** by default. Raise the effort to `high` for bug fixes in existing code and edge-case-heavy work. Lower it to `low` for mechanical edits across many files.
 - **Sonnet 5.5** for well-scoped work with a clear spec and a way to check the result.
-- **Haiku 4.5** for lookups and edits that are obviously right or wrong at a glance, not for writing real code.
+- **Haiku 5.5 · medium** for lookups, short tool tasks and edits that are obviously right or wrong at a glance, not for real coding tasks.
 - **Fable 5.1** for long unattended runs, problems with no existing pattern, high-stakes root-cause hunts, or when Opus has already failed. Not for back-and-forth work.
 
-Update the model table in the skill and `LATEST` in `router/pick.ts` when new models ship. Haiku 5.5 is announced as coming soon.
+Update the model table in the skill and `LATEST` in `router/pick.ts` when new models ship.
 
 ## Tests
 

@@ -32,7 +32,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FAMILIES = {"fable", "opus", "sonnet", "haiku"}
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
-DEFAULT_EFFORT = {"fable": "high", "opus": "medium", "sonnet": "medium"}
+DEFAULT_EFFORT = {"fable": "high", "opus": "medium", "sonnet": "medium", "haiku": "medium"}
 
 
 def skill_body(path: pathlib.Path) -> str:
@@ -74,8 +74,6 @@ def parse(text: str) -> tuple[str, str | None] | None:
         return ("keep", None)
     if model not in FAMILIES:
         return None
-    if model == "haiku":
-        return ("haiku", None)
     effort = raw.get("effort") if raw.get("effort") in EFFORTS else DEFAULT_EFFORT[model]
     return (model, effort)
 
@@ -146,7 +144,7 @@ def main() -> int:
         # "keep" means the current model and effort, so it also counts as that pick.
         cur = p.get("current", spec["defaults"]["current"])
         cur_family = next((f for f in FAMILIES if f in cur["model"]), None)
-        as_current = (cur_family, None if cur_family == "haiku" else cur.get("effort"))
+        as_current = (cur_family, cur.get("effort"))
 
         def ok(x):
             if x is None:
