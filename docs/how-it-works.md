@@ -12,32 +12,45 @@ sequenceDiagram
     You->>CC: First prompt (new session or after /clear)
     CC->>Mod: prompt.submit hook
     Mod->>Mod: A person typed it, no turns yet, nothing routed yet?
-    Mod->>Opus: choose-model skill + the prompt, current model, style
-    Opus-->>Mod: { model, effort, reason, alternative }
+    Mod->>CC: next(e), the prompt goes on unchanged
+    CC->>Mod: turn.step hook, the turn's first model request
+    Note over CC,Mod: Held until routing is done. It carries the real effort.
+    Mod->>Opus: choose-model skill, the prompt, current model and effort, style
+    Opus-->>Mod: model, effort, reason, alternative
     alt Already on the pick (same model and effort)
         Mod->>Mod: Keep the current model without asking
     else Auto mode
         Mod->>Mod: Apply the pick without asking
-    else
-        Mod->>You: Picker: Recommended / Alternative / Keep current / Other
-        You-->>Mod: Choice (Esc keeps the current model)
+    else Default mode
+        Mod->>You: Picker with Recommended, Alternative, Keep current, Other
+        You-->>Mod: Your choice (Esc keeps the current model)
     end
-    Mod->>CC: next(e): the prompt goes on unchanged
-    CC->>Mod: turn.start
-    Mod->>You: Notice line under the prompt: what was picked and why
-    loop Every main-loop model request this session
+    Mod->>You: Notice line under the prompt, what was picked and why
+    Mod->>CC: next(e) with the chosen model and effort
+    loop Every later main-loop model request this session
         CC->>Mod: turn.step hook
-        Mod->>CC: next({ ...e, model, effort })
+        Mod->>CC: next(e) with the chosen model and effort
     end
-    Note over Mod,CC: Never runs /model: it would save the pick as your default for every future session
+    Note over You,Opus: Never runs /model. It would save the pick as your default for every future session.
 ```
+
+## When routing happens
+
+Routing runs at the first prompt's first model request, not when you press Enter. Your prompt shows in the transcript, the status line says "routing…", and then the picker opens. The request waits until you choose, then goes out on your choice, so the whole prompt is answered by the routed model.
+
+It waits for that request because of effort. An effort set by `claude --effort` or the desktop app's effort picker isn't visible to plugins when a prompt is submitted, and the request is the first place it shows. Routing earlier would judge against the saved effort. The picker's "Keep … (Current)" would then name the wrong level, and a pick at the saved effort would be skipped as no change when it was one.
+
+- **Esc while routing** cancels the turn and puts your prompt back in the box. Send it again, edited or not, and it is routed.
+- **Esc in the picker** keeps the current model and sends the prompt.
+- **Skipped prompts** (the `~~` prefix, or `skip` for Remote Control) are noted when their turn starts.
+- **Remote Control:** the picker shows on claude.ai or your phone, and the choice there applies the same way.
 
 ## The pieces
 
 | File | What it does |
 |---|---|
 | [`skills/choose-model/SKILL.md`](../skills/choose-model/SKILL.md) | The routing rules, condensed from Anthropic's docs, model announcements and Claude Code blog posts (sources at the end). The router uses it as its system prompt, and you can run it yourself as `/session-router:choose-model <task>`. |
-| [`hooks/register.ts`](../hooks/register.ts) | The hooks: catches the first prompt, calls the router, shows the picker, adds the notice line, rewrites the model and effort on each main-loop request, and answers `/session-router:explain`. |
+| [`hooks/register.ts`](../hooks/register.ts) | The hooks: catches the first prompt, and at its first model request calls the router, shows the picker and adds the notice line; then rewrites the model and effort on each main-loop request, and answers `/session-router:explain`. |
 | [`commands/explain.md`](../commands/explain.md) | Lists `/session-router:explain` under the plugin's name. The hooks answer it directly, so it never reaches the model. |
 | [`router/pick.ts`](../router/pick.ts) | Pure logic: the latest model of each family, default efforts, picker labels, parsing the router's JSON, and matching your answer. |
 | [`evals/`](../evals) | Prompts with acceptable picks, and a runner that scores the skill. |
@@ -58,7 +71,7 @@ Update the model table in the skill and `LATEST` in `router/pick.ts` when new mo
 
 ```sh
 claude plugin validate .
-claude plugin test .                                      # 46 tests
+claude plugin test .                                      # 57 tests
 npx -y -p typescript@5.6 tsc -p . --noEmit                # type check; needs the plugin loaded once (--plugin-dir) for its types
 uv run evals/run.py --runs 5                              # 38 prompts
 uv run evals/run.py --runs 5 --probes evals/holdout.json  # 20 held-out prompts

@@ -194,7 +194,7 @@ export function options(rec: Rec, current: Current): Option[] {
   }
   const keep = `Keep ${currentLabel(current)}`
   // When the answer is to keep the current model, that comes first.
-  return keeps ? [{ label: `${keep} (Recommended)`, choice: null }, ...out] : [...out, { label: `${keep} (current)`, choice: null }]
+  return keeps ? [{ label: `${keep} (Recommended)`, choice: null }, ...out] : [...out, { label: `${keep} (Current)`, choice: null }]
 }
 
 // Instructions for reading an answer typed into the picker.
